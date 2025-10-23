@@ -40,3 +40,13 @@ build/
 # OS
 .DS_Store
 Thumbs.db
+
+# Test files
+test_*.py
+
+# Log files
+*.log
+
+# Planning documents (internal)
+LANGEXTRACT_PLAN.md
+CLAUDE.md
