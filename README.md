@@ -1,299 +1,693 @@
-# Galaxy Documentation Embedding Pipelines
+# ChatGXY Materials Pipeline
 
-RAG-ready embedding pipelines for Galaxy project documentation sources:
-- **GTN Tutorials** - Curated educational training materials
-- **Discourse Forum** - Community Q&A and support threads
+A complete RAG (Retrieval-Augmented Generation) system for the Galaxy Project that fetches, processes, and embeds documentation from multiple sources. This enables semantic search and question-answering capabilities for the ChatGXY chatbot.
+
+## Overview
+
+The system consists of three independent pipelines that populate separate Chroma vector store collections:
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                   CHATGXY MATERIALS PIPELINE                    │
+├─────────────────────────────────────────────────────────────────┤
+│                                                                 │
+│  DISCOURSE PIPELINE       GTN PIPELINE         FAQ PIPELINE     │
+│  ┌──────────────┐        ┌──────────┐        ┌──────────┐     │
+│  │ 5,986 topics │        │   168    │        │    25    │     │
+│  │ 70,516 chunks│        │ tutorials│        │   FAQs   │     │
+│  └──────────────┘        │  9,295   │        │ 62 chunks│     │
+│         ↓                │  chunks  │        └──────────┘     │
+│  discourse_posts         └──────────┘              ↓          │
+│    collection                  ↓            galaxy_faqs       │
+│                         gtn_tutorials         collection      │
+│                           collection                           │
+│                                                                 │
+│                    CHROMA VECTOR STORE                          │
+│                  (./data/embeddings/)                           │
+│                                                                 │
+│              Total: ~80,000 embedded chunks                     │
+└─────────────────────────────────────────────────────────────────┘
+```
 
 ## Quick Start
 
+### Prerequisites
+
+1. **Environment Variables** (`.env` file):
 ```bash
-# 1. Install dependencies
-uv sync
+# Embeddings API (LM Studio, SambaNova, or OpenAI-compatible)
+EMBEDDINGS_API_KEY=your-api-key
+EMBEDDINGS_BASE_URL=http://127.0.0.1:1234/v1  # or your endpoint
+EMBEDDINGS_MODEL=text-embedding-nomic-embed-text-v2-moe
 
-# 2. Setup environment
-# Edit .env with:
-#   - Your embeddings API configuration (LM Studio, SambaNova, or OpenAI)
-#   - Your Discourse API key and username
-#   - Path to GTN training materials
+# Discourse API
+DISCOURSE_BASE=https://help.galaxyproject.org
+DISCOURSE_API_KEY=your_api_key_here
+DISCOURSE_API_USER=your_username_here
 
-# 3. Run both pipelines
-./scripts/update_all.sh
+# GTN Source (local clone of training-material repo)
+GTN_SOURCE_DIRECTORY=/path/to/training-material/topics
+
+# Storage
+CHROMA_DIRECTORY=./data/embeddings
 ```
 
-## Two Data Sources
+2. **LM Studio** running with embedding model (recommended):
+   - Model: `text-embedding-nomic-embed-text-v2-moe`
+   - Server: `http://127.0.0.1:1234`
 
-### 1. Galaxy Training Network (GTN)
-**Source**: Curated markdown tutorial files
-**Collection**: `gtn_tutorials`
-**Update frequency**: Occasional (when training materials change)
-**Characteristics**: Authoritative, structured, educational
+3. **Dependencies**:
+```bash
+uv sync  # Install all dependencies
+```
 
-### 2. Discourse Forum
-**Source**: help.galaxyproject.org API (all categories)
-**Collection**: `discourse_posts`
-**Update frequency**: Frequent (daily or more)
-**Characteristics**: Real-world problems, community solutions, Q&A format
-**Note**: Automatically fetches from ALL categories in the forum
+### Running the Pipelines
 
-## Architecture
+```bash
+# Show all available commands
+make help
+
+# Run individual pipelines
+make discourse-all   # Discourse forum posts
+make gtn            # GTN tutorials
+make faq            # Galaxy FAQs
+
+# Run all pipelines
+make update-all
+
+# Check status
+make status
+```
+
+## The Three Pipelines
+
+### 1. Discourse Pipeline
+
+**Purpose**: Fetches and embeds Galaxy Project forum posts from Discourse.
+
+**Source**: https://help.galaxyproject.org
+
+**Output**:
+- 5,986 topics
+- 70,516 embedding chunks
+- Collection: `discourse_posts`
+
+**Features**:
+- SQLite database for persistent storage
+- Incremental updates (content hashing)
+- Parallel processing (4+ workers)
+- API response caching
+- Rate limiting (1.5s between requests)
+
+**Usage**:
+```bash
+# Full pipeline
+make discourse-all
+
+# Individual phases
+make fetch      # Fetch topics from API
+make convert    # Convert to documents (parallel)
+make embed      # Create embeddings
+
+# Force full rebuild
+uv run python -m pipelines.discourse --force-rebuild
+```
+
+**Implementation**: See `.claude/plans/DISCOURSE_PIPELINE.md` for detailed architecture.
+
+### 2. GTN Pipeline
+
+**Purpose**: Processes Galaxy Training Network tutorial markdown files.
+
+**Source**: Local clone of https://github.com/galaxyproject/training-material
+
+**Output**:
+- 168 tutorials
+- 9,295 embedding chunks
+- Collection: `gtn_tutorials`
+
+**Features**:
+- Recursive directory scanning for `tutorial.md` files
+- Markdown front matter extraction
+- Topic/subtopic organization
+- Incremental updates
+
+**Usage**:
+```bash
+# Run GTN pipeline
+make gtn
+
+# With options
+uv run python -m pipelines.gtn --force-rebuild
+uv run python -m pipelines.gtn --test-query "your question"
+```
+
+**Document Structure**:
+```python
+Document(
+    page_content="Tutorial content...",
+    metadata={
+        "source": "path/to/tutorial.md",
+        "data_source": "gtn",
+        "content_type": "tutorial",
+        "title": "Tutorial Title",
+        "topic": "assembly",
+        "subtopic": "introduction",
+        "tags": "assembly, genome, nanopore",
+        "contributors": "author1, author2"
+    }
+)
+```
+
+### 3. FAQ Pipeline
+
+**Purpose**: Processes Galaxy FAQ document with individual Q&A pairs.
+
+**Source**: `training-material/faq.md`
+
+**Output**:
+- 25 FAQs
+- 62 embedding chunks
+- Collection: `galaxy_faqs`
+
+**Features**:
+- Markdown parsing (## headers = questions)
+- Each FAQ becomes a single document
+- Category extraction (# headers)
+- Semantic search optimized for Q&A format
+
+**Usage**:
+```bash
+# Run FAQ pipeline
+make faq
+
+# With test query
+uv run python -m pipelines.faq --test-query "your question"
+
+# Force rebuild
+uv run python -m pipelines.faq --force-rebuild
+```
+
+**Document Format**:
+```
+Q: How do I use Galaxy workflows?
+
+A: Galaxy workflows allow you to...
+```
+
+**Metadata**:
+```python
+{
+    "source": "faq.md",
+    "data_source": "gtn_faq",
+    "content_type": "faq",
+    "category": "For Individual Learners",
+    "question": "How do I use Galaxy workflows?",
+    "faq_index": 5
+}
+```
+
+## System Architecture
+
+### Data Flow
+
+```
+Source Data → Load/Parse → Documents → Chunks → Embeddings → Vector Store
+```
+
+1. **Load**: Fetch/read source data (API, files, database)
+2. **Parse**: Convert to LangChain Documents with metadata
+3. **Chunk**: Split long documents (512 tokens, 50 overlap)
+4. **Embed**: Generate embeddings via LM Studio
+5. **Store**: Persist in Chroma vector database
+
+### Common Components
+
+All pipelines share the `EmbeddingPipeline` class (`pipelines/common.py`):
+
+```python
+from pipelines.common import EmbeddingPipeline
+
+pipeline = EmbeddingPipeline(
+    chroma_directory="./data/embeddings",
+    collection_name="my_collection",
+    tracking_file="./data/embeddings/.tracking.json",
+    incremental=True  # Enable incremental updates
+)
+
+# Process documents
+vectorstore = pipeline.run(documents, force_rebuild=False)
+
+# Query
+results = vectorstore.similarity_search("your query", k=5)
+```
+
+**Features**:
+- Text chunking with RecursiveCharacterTextSplitter
+- Batch embedding (100 chunks per batch)
+- Incremental updates (only process changed documents)
+- Content hashing for change detection
+- Progress tracking with tqdm
+
+### Storage Structure
 
 ```
 chatgxy-materials/
-├── pipelines/
-│   ├── common.py        # Shared embedding logic
-│   ├── gtn.py           # GTN pipeline
-│   └── discourse.py     # Discourse pipeline
 ├── data/
-│   ├── embeddings/      # Chroma database (both collections)
-│   ├── discourse/       # Discourse cache
-│   └── gtn/             # GTN data (if needed)
-├── scripts/
-│   └── update_all.sh    # Master update script
-└── old/                 # Deprecated files
-```
-
-## Usage
-
-### Run Both Pipelines (Recommended)
-
-```bash
-# Incremental updates (only processes changes)
-./scripts/update_all.sh
-
-# Force full rebuild
-./scripts/update_all.sh --force-rebuild
-```
-
-### Run Individual Pipelines
-
-**GTN Pipeline:**
-```bash
-uv run python -m pipelines.gtn --source-dir /path/to/training-material/topics
-uv run python -m pipelines.gtn --source-dir /path/to/training-material/topics --force-rebuild
-uv run python -m pipelines.gtn --source-dir /path/to/training-material/topics --test-query "RNA-seq"
-```
-
-**Discourse Pipeline:**
-```bash
-uv run python -m pipelines.discourse
-uv run python -m pipelines.discourse --force-rebuild
-uv run python -m pipelines.discourse --test-query "workflow error"
+│   ├── discourse/
+│   │   ├── discourse.db          # SQLite database
+│   │   └── .cache/                # API response cache
+│   │
+│   └── embeddings/
+│       ├── chroma.sqlite3         # Chroma vector DB
+│       ├── .discourse_tracking.json
+│       ├── .gtn_tracking.json
+│       └── .faq_tracking.json
 ```
 
 ## Incremental Updates
 
-Both pipelines are **idempotent** - safe to run repeatedly:
+All pipelines support incremental updates to only process new or changed content:
 
-- ✅ SHA256 content hashing detects changes
-- ✅ Only processes new/modified documents
-- ✅ Removes embeddings for deleted documents
-- ✅ Tracks processing history
-- ✅ Saves API costs (98%+ savings after first run)
+**How it works**:
+1. Content hashing (SHA256) detects changes in documents
+2. Tracking files record processed documents
+3. Only changed documents are re-chunked and re-embedded
+4. Removed documents are deleted from vector store
 
-**Example cost savings:**
-- First run: 1000 documents → **$0.00 (FREE via TACC!)**
-- Daily updates: 10 changed → **$0.00 (FREE!)**
-- No changes: Skip processing → $0.00
-
-**Annual cost estimate** (daily updates, 1% change rate):
-- **$0.00/year** - Completely free via TACC infrastructure!
-
-## Scheduling Periodic Updates
-
-**Cron (recommended):**
+**Example**:
 ```bash
-# Daily at 2am
-0 2 * * * cd /path/to/chatgxy-materials && ./scripts/update_all.sh
+# Initial run: processes everything
+make discourse-all
 
-# Or separately
-0 2 * * * cd /path/to/chatgxy-materials && uv run python -m pipelines.gtn
-0 3 * * * cd /path/to/chatgxy-materials && uv run python -m pipelines.discourse
+# Later runs: only process changes
+make fetch      # Fetch new topics
+make convert    # Convert only new/changed
+make embed      # Embed only new/changed
+
+# Or force full rebuild
+uv run python -m pipelines.discourse --force-rebuild
 ```
 
-**systemd timer:**
-```ini
-# /etc/systemd/system/galaxy-embeddings.service
-[Unit]
-Description=Update Galaxy documentation embeddings
+**Cost savings**:
+- First run: 6,179 documents → ~70 minutes
+- Daily updates: ~10 changed → <2 minutes
+- 98%+ savings after first run (time and API costs)
 
-[Service]
-Type=oneshot
-WorkingDirectory=/path/to/chatgxy-materials
-ExecStart=/path/to/chatgxy-materials/scripts/update_all.sh
-```
+## Performance
 
-## Querying the Vector Database
+### Current Stats
 
-Both collections are stored in the same Chroma database but are **separate collections** for flexible retrieval.
+| Pipeline | Documents | Chunks | Processing Time | Storage |
+|----------|-----------|--------|-----------------|---------|
+| Discourse | 5,986 | 70,516 | ~67 min | ~2 GB |
+| GTN | 168 | 9,295 | ~2 min | ~200 MB |
+| FAQ | 25 | 62 | <1 min | ~10 MB |
+| **Total** | **6,179** | **79,873** | **~70 min** | **~2.2 GB** |
+
+### Optimization Tips
+
+1. **Parallel Processing**: Use `--workers N` for discourse conversion
+2. **Incremental Updates**: Run regularly to avoid full rebuilds
+3. **Batch Size**: Adjust in `common.py` if memory constrained
+4. **Caching**: API responses cached to avoid re-fetching
+
+## Integration with ChatGXY
+
+The pipelines produce Chroma vector stores that can be queried by the ChatGXY chatbot:
 
 ```python
 from langchain_community.vectorstores import Chroma
-from langchain_openai import OpenAIEmbeddings
-import os
+from langchain_community.embeddings import LMStudioEmbeddings
 
-# Using configured embeddings endpoint (local LM Studio, SambaNova, OpenAI, etc.)
-embeddings = OpenAIEmbeddings(
-    model=os.getenv("EMBEDDINGS_MODEL", "text-embedding-nomic-embed-text-v2-moe"),
-    openai_api_key=os.getenv("EMBEDDINGS_API_KEY"),
-    openai_api_base=os.getenv("EMBEDDINGS_BASE_URL")
+# Initialize embeddings
+embeddings = LMStudioEmbeddings(
+    base_url="http://localhost:1234/v1",
+    model="text-embedding-nomic-embed-text-v2-moe"
 )
 
-# Query GTN tutorials
-gtn_store = Chroma(
-    collection_name="gtn_tutorials",
-    embedding_function=embeddings,
-    persist_directory="./data/embeddings"
-)
-
-gtn_results = gtn_store.similarity_search("RNA-seq tutorial", k=5)
-
-# Query Discourse posts
-discourse_store = Chroma(
+# Load all collections
+discourse = Chroma(
+    persist_directory="./data/embeddings",
     collection_name="discourse_posts",
-    embedding_function=embeddings,
-    persist_directory="./data/embeddings"
+    embedding_function=embeddings
 )
 
-discourse_results = discourse_store.similarity_search("workflow error", k=5)
+gtn = Chroma(
+    persist_directory="./data/embeddings",
+    collection_name="gtn_tutorials",
+    embedding_function=embeddings
+)
 
-# Search both (combine results)
-all_results = gtn_results + discourse_results
+faq = Chroma(
+    persist_directory="./data/embeddings",
+    collection_name="galaxy_faqs",
+    embedding_function=embeddings
+)
+
+# Query all sources
+def search_all(query: str, k: int = 5):
+    results = {
+        'discourse': discourse.similarity_search(query, k=k),
+        'gtn': gtn.similarity_search(query, k=k),
+        'faq': faq.similarity_search(query, k=k)
+    }
+    return results
+
+# Example
+results = search_all("How do I install Galaxy?")
+for source, docs in results.items():
+    print(f"\n{source.upper()}:")
+    for doc in docs:
+        print(f"  - {doc.metadata.get('title', doc.metadata.get('question'))}")
 ```
 
-## RAG Integration
+### RAG Integration Strategies
 
-Separate collections enable flexible retrieval strategies:
+Separate collections enable flexible retrieval:
 
-1. **Search only curated content** (tutorials)
+1. **Search only curated content** (tutorials + FAQs)
 2. **Search only community Q&A** (discourse)
-3. **Search both with different weights** (prioritize tutorials)
+3. **Search all with different weights** (prioritize FAQs, then tutorials)
 4. **Show sources separately** in results
 5. **Filter by metadata** (tags, dates, reply counts, etc.)
 
-**Example RAG prompt:**
+**Example RAG prompt**:
 ```
-Context from official tutorials:
+Quick Answer (if available):
+{faq_results}
+
+Official Tutorials:
 {gtn_results}
 
-Context from community discussions:
+Community Discussions:
 {discourse_results}
 
 User question: {query}
 ```
 
-## Environment Variables
+## File Structure
 
-Configure your `.env` file with the following options:
+```
+chatgxy-materials/
+├── README.md                    # Main documentation
+├── INTEGRATION_GUIDE.md         # RAG integration guide
+├── Makefile                     # Pipeline commands
+├── pyproject.toml               # Dependencies
+├── .env                         # Configuration (not in repo)
+│
+├── pipelines/
+│   ├── common.py                # Shared embedding pipeline
+│   ├── database.py              # SQLite database layer
+│   ├── discourse.py             # Discourse forum pipeline
+│   ├── gtn.py                   # GTN tutorial pipeline
+│   └── faq.py                   # FAQ pipeline
+│
+├── scripts/
+│   └── migrate_to_sqlite.py     # Migration utilities
+│
+└── data/                        # Generated data (not in repo)
+    ├── discourse/
+    │   ├── discourse.db          # SQLite database
+    │   └── .cache/               # API response cache
+    │
+    └── embeddings/
+        ├── chroma.sqlite3        # Chroma vector database
+        ├── .discourse_tracking.json
+        ├── .gtn_tracking.json
+        └── .faq_tracking.json
+```
+
+## Makefile Commands
 
 ```bash
-# Required - Embeddings API configuration
-# Works with: OpenAI, SambaNova (via TACC), LM Studio, or any OpenAI-compatible endpoint
+# Help
+make help                 # Show all commands
+
+# Discourse Pipeline
+make fetch                # Fetch topics from Discourse API
+make convert              # Convert topics to documents
+make embed                # Create embeddings
+make discourse-all        # Run complete Discourse pipeline
+
+# GTN Pipeline
+make gtn                  # Run GTN pipeline
+
+# FAQ Pipeline
+make faq                  # Run FAQ pipeline
+
+# All Pipelines
+make update-all           # Run all three pipelines
+
+# Utilities
+make status               # Show database stats
+make clean                # Remove deprecated files
+```
+
+## Environment Variables
+
+### Required
+
+```bash
+# Embeddings API (choose one)
 EMBEDDINGS_API_KEY=your-api-key
-EMBEDDINGS_BASE_URL=https://api.openai.com/v1  # or http://127.0.0.1:1234/v1 for LM Studio
-EMBEDDINGS_MODEL=text-embedding-3-small  # or text-embedding-nomic-embed-text-v2-moe for local
+EMBEDDINGS_BASE_URL=http://127.0.0.1:1234/v1  # LM Studio
+EMBEDDINGS_MODEL=text-embedding-nomic-embed-text-v2-moe
 
-# GTN
-GTN_SOURCE_DIRECTORY=/path/to/training-material/topics
-
-# Discourse (fetches from ALL categories)
+# Discourse
 DISCOURSE_API_KEY=your-discourse-key
 DISCOURSE_API_USER=your-username
 DISCOURSE_BASE=https://help.galaxyproject.org
 
-# Shared
+# GTN
+GTN_SOURCE_DIRECTORY=/path/to/training-material/topics
+
+# Storage
 CHROMA_DIRECTORY=./data/embeddings
 ```
 
 ### Embedding Models
 
-This project supports multiple embedding providers via OpenAI-compatible APIs:
+**Local LM Studio** (recommended for development):
+- Model: `text-embedding-nomic-embed-text-v2-moe`
+- Dimensions: 768
+- Runs locally, no API costs, unlimited usage
 
-**Local LM Studio (recommended for development):**
-- ✅ **FREE** - Runs on your own hardware
-- ✅ **Private** - Data never leaves your machine
-- ✅ **Fast** - text-embedding-nomic-embed-text-v2-moe (768 dimensions)
-- ✅ **No API limits** - Process as much as you want
+**SambaNova via TACC**:
+- Model: `e5-mistral-7B-instruct`
+- Dimensions: 4096
+- Free but may have connectivity issues
 
-**SambaNova via TACC (alternative):**
-- ✅ **FREE** - No external API costs (when working)
-- ✅ **High quality** - e5-mistral-7B-instruct (4096 dimensions)
-- ⚠️ **Note** - May have connectivity issues
-
-**OpenAI (production):**
-- 💰 **Low cost** - text-embedding-3-small (~$0.02/1M tokens)
-- ✅ **Reliable** - High uptime and performance
-- ✅ **High quality** - 1536 dimensions
-
-## Data Organization
-
-```
-data/
-├── embeddings/
-│   ├── chroma.sqlite3                  # Vector database
-│   ├── .gtn_tracking.json              # GTN processing history
-│   └── .discourse_tracking.json        # Discourse processing history
-└── discourse/
-    ├── .cache/                          # API response cache
-    └── [topic data]
-```
-
-## Metadata
-
-Each document includes rich metadata for filtering:
-
-**GTN:**
-- `data_source`: "gtn"
-- `content_type`: "tutorial"
-- `source`: file path
-
-**Discourse:**
-- `data_source`: "discourse"
-- `content_type`: "forum_post"
-- `source`: `discourse://category/topic_id`
-- `category`: category slug (e.g., "usegalaxy-org-support", "galaxy-development")
-- `title`, `url`, `reply_count`, `views`, `tags`, `created_at`
+**OpenAI** (production):
+- Model: `text-embedding-3-small`
+- Dimensions: 1536
+- ~$0.02/1M tokens, reliable uptime
 
 ## Troubleshooting
 
-**"SAMBANOVA_API_KEY not set"**
+### Common Issues
+
+**1. Missing Environment Variables**
+```
+KeyError: 'DISCOURSE_BASE'
+```
+**Solution**: Create `.env` file with required variables.
+
+**2. LM Studio Not Running**
+```
+ConnectionError: Failed to connect to http://127.0.0.1:1234
+```
+**Solution**: Start LM Studio with embedding model loaded.
+
+**3. GTN Source Not Found**
+```
+FileNotFoundError: /path/to/training-material/topics
+```
+**Solution**: Set `GTN_SOURCE_DIRECTORY` in `.env` or use `--source-dir` flag.
+
+**4. FAQ File Not Found**
+```
+FileNotFoundError: /path/to/training-material/faq.md
+```
+**Solution**: Set `GTN_SOURCE_DIRECTORY` to parent directory of `faq.md`.
+
+**5. Out of Memory**
+```
+MemoryError during embedding
+```
+**Solution**: Reduce batch size in `pipelines/common.py` (default: 100).
+
+### Debugging
+
+**Check database**:
 ```bash
-cp .env.example .env
-# API key and base URL are pre-configured in .env.example
+make status
+
+# Or manually
+sqlite3 data/discourse/discourse.db "SELECT COUNT(*) FROM topics"
 ```
 
-**"No GTN documents found"**
+**Test embeddings**:
 ```bash
-# Check path in .env
-echo $GTN_SOURCE_DIRECTORY
-ls -la $GTN_SOURCE_DIRECTORY/**/*.md
+uv run python -m pipelines.discourse --test-query "your question"
+uv run python -m pipelines.gtn --test-query "your question"
+uv run python -m pipelines.faq --test-query "your question"
 ```
 
-**"Discourse API error"**
-```bash
-# Verify credentials
-curl -H "Api-Key: $DISCOURSE_API_KEY" -H "Api-Username: $DISCOURSE_API_USER" \
-  $DISCOURSE_BASE/c/$DISCOURSE_CATEGORY.json
+**View Chroma collections**:
+```python
+from chromadb import PersistentClient
+client = PersistentClient(path="./data/embeddings")
+
+collections = client.list_collections()
+for coll in collections:
+    print(f"{coll.name}: {coll.count()} chunks")
 ```
 
-**Force rebuild from scratch**
+**Check tracking files**:
 ```bash
-rm -rf data/embeddings/
-./scripts/update_all.sh
+cat data/embeddings/.discourse_tracking.json | jq '.documents | length'
+cat data/embeddings/.gtn_tracking.json | jq '.documents | length'
+cat data/embeddings/.faq_tracking.json | jq '.documents | length'
 ```
 
-## Migration from Old Structure
+## Maintenance
 
-Old files (`main.py`, `export_discourse.py`) are deprecated. The new structure provides:
+### Regular Updates
 
-- Clear separation of data sources
-- Separate collections for flexible querying
-- Better organization
-- Same incremental update logic
-- Same cost savings
+**Weekly**: Fetch new content
+```bash
+make fetch      # Get new Discourse topics
+make convert    # Convert new topics
+make embed      # Embed changes
+make gtn        # Update GTN tutorials
+make faq        # Update FAQs
+```
 
-See `MIGRATION_NOTES.md` for details.
+**Or run all at once**:
+```bash
+make update-all
+```
+
+### Monthly: Full Rebuild
+
+To catch edits and ensure data quality:
+```bash
+uv run python -m pipelines.discourse --force-rebuild
+uv run python -m pipelines.gtn --force-rebuild
+uv run python -m pipelines.faq --force-rebuild
+```
+
+### Scheduling with Cron
+
+```bash
+# Daily at 2am
+0 2 * * * cd /path/to/chatgxy-materials && make update-all
+
+# Or individually
+0 2 * * * cd /path/to/chatgxy-materials && make discourse-all
+0 3 * * * cd /path/to/chatgxy-materials && make gtn
+0 3 * * * cd /path/to/chatgxy-materials && make faq
+```
+
+### Monitoring
+
+```bash
+# Overall stats
+make status
+
+# Recent Discourse topics
+sqlite3 data/discourse/discourse.db \
+  "SELECT title, created_at FROM topics ORDER BY created_at DESC LIMIT 10"
+
+# Embedding coverage
+sqlite3 data/discourse/discourse.db \
+  "SELECT COUNT(*) as total_docs,
+          (SELECT COUNT(*) FROM embeddings) as embedded_docs"
+```
+
+## Future Enhancements
+
+### Planned Features
+
+1. **Multi-Source FAQ Pipeline (Option 3)**
+   - Combine FAQs from multiple sources
+   - Discourse posts tagged/categorized as FAQs
+   - Galaxy documentation FAQ pages
+   - Unified FAQ collection with source tracking
+
+2. **Scheduled Updates**
+   - Cron jobs for daily/weekly updates
+   - Webhook support for real-time updates
+   - Differential sync
+
+3. **Advanced Search**
+   - Hybrid search (keyword + semantic)
+   - User/post filtering
+   - Time-based weighting
+   - Cross-collection search
+
+4. **Performance**
+   - Parallel embedding (GPU acceleration)
+   - Caching layer for frequent queries
+   - Query optimization
+
+5. **Monitoring**
+   - Dashboard for pipeline health
+   - Error tracking and alerts
+   - Performance metrics
+   - Data quality checks
 
 ## Development
+
+### Running Tests
+
+```bash
+# All tests
+pytest tests/
+
+# Specific test
+pytest tests/test_db_integration.py
+
+# With verbose output
+pytest -v tests/
+```
+
+### Adding a New Pipeline
+
+1. Create new file: `pipelines/your_pipeline.py`
+2. Inherit from `EmbeddingPipeline` or create custom class
+3. Implement document loading and metadata extraction
+4. Add Makefile target
+5. Update this README
+6. Add tests
+
+Example template:
+```python
+from pipelines.common import EmbeddingPipeline
+from langchain.schema import Document
+from typing import List
+
+class YourPipeline:
+    def __init__(self, source_dir: str, chroma_directory: str):
+        self.pipeline = EmbeddingPipeline(
+            chroma_directory=chroma_directory,
+            collection_name="your_collection",
+            incremental=True
+        )
+
+    def load_documents(self) -> List[Document]:
+        # Load and parse your source data
+        documents = []
+        # ... your loading logic ...
+        return documents
+
+    def run(self, force_rebuild: bool = False):
+        documents = self.load_documents()
+        return self.pipeline.run(documents, force_rebuild=force_rebuild)
+```
+
+### Code Formatting
 
 ```bash
 # Install dev dependencies
@@ -306,12 +700,7 @@ uv run black .
 uv run ruff check .
 ```
 
-## Documentation
+## Additional Documentation
 
-- `CLAUDE.md` - Technical details and architecture
-- `MIGRATION_NOTES.md` - Changes from old structure
-- `QUICKSTART.md` - Quick reference guide
-
-## License
-
-See `LICENSE` file.
+- `INTEGRATION_GUIDE.md` - Complete RAG integration guide with code examples
+- `.claude/plans/` - Planning docs, detailed architecture notes, migration guides
