@@ -7,9 +7,7 @@ env/
 .env
 
 # Data directories
-data/embeddings/        # Chroma vector database
-data/discourse/         # Discourse posts and cache
-data/gtn/              # GTN data (if needed)
+data/
 
 # Old structure (deprecated)
 chroma_data/
