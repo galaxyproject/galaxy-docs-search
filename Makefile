@@ -23,8 +23,11 @@ help:
 	@echo "FAQ Pipeline:"
 	@echo "  make faq        - Run FAQ pipeline"
 	@echo ""
+	@echo "IWC Workflows Pipeline:"
+	@echo "  make iwc        - Run IWC workflows pipeline"
+	@echo ""
 	@echo "All Pipelines:"
-	@echo "  make update-all - Run Discourse, GTN, and FAQ pipelines"
+	@echo "  make update-all - Run all pipelines (Discourse, GTN, FAQ, IWC)"
 
 # Discourse pipeline targets
 fetch: discourse-fetch
@@ -60,6 +63,11 @@ faq:
 	@echo "❓ Running FAQ pipeline..."
 	uv run python -m pipelines.faq
 
+# IWC workflows pipeline
+iwc:
+	@echo "⚙️  Running IWC workflows pipeline..."
+	uv run python -m pipelines.iwc
+
 # Run all pipelines
 update-all:
 	@echo "🌐 Running all pipelines..."
@@ -71,6 +79,9 @@ update-all:
 	@echo ""
 	@echo "Running FAQ pipeline..."
 	$(MAKE) faq
+	@echo ""
+	@echo "Running IWC workflows pipeline..."
+	$(MAKE) iwc
 	@echo ""
 	@echo "✅ All pipelines complete!"
 

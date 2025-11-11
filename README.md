@@ -4,29 +4,30 @@ A complete RAG (Retrieval-Augmented Generation) system for the Galaxy Project th
 
 ## Overview
 
-The system consists of three independent pipelines that populate separate Chroma vector store collections:
+The system consists of four independent pipelines that populate separate Chroma vector store collections:
 
 ```
-┌─────────────────────────────────────────────────────────────────┐
-│                   CHATGXY MATERIALS PIPELINE                    │
-├─────────────────────────────────────────────────────────────────┤
-│                                                                 │
-│  DISCOURSE PIPELINE       GTN PIPELINE         FAQ PIPELINE     │
-│  ┌──────────────┐        ┌──────────┐        ┌──────────┐     │
-│  │ 5,986 topics │        │   168    │        │    25    │     │
-│  │ 70,516 chunks│        │ tutorials│        │   FAQs   │     │
-│  └──────────────┘        │  9,295   │        │ 62 chunks│     │
-│         ↓                │  chunks  │        └──────────┘     │
-│  discourse_posts         └──────────┘              ↓          │
-│    collection                  ↓            galaxy_faqs       │
-│                         gtn_tutorials         collection      │
-│                           collection                           │
-│                                                                 │
-│                    CHROMA VECTOR STORE                          │
-│                  (./data/embeddings/)                           │
-│                                                                 │
-│              Total: ~80,000 embedded chunks                     │
-└─────────────────────────────────────────────────────────────────┘
+┌──────────────────────────────────────────────────────────────────────────────┐
+│                        CHATGXY MATERIALS PIPELINE                            │
+├──────────────────────────────────────────────────────────────────────────────┤
+│                                                                              │
+│  DISCOURSE     GTN          FAQ          IWC WORKFLOWS                       │
+│  ┌─────────┐  ┌────────┐   ┌────────┐   ┌─────────────┐                    │
+│  │ 5,986   │  │  168   │   │   25   │   │     105     │                    │
+│  │ topics  │  │tutorial│   │  FAQs  │   │  workflows  │                    │
+│  │ 70,516  │  │ 9,295  │   │   62   │   │  772 chunks │                    │
+│  │ chunks  │  │ chunks │   │ chunks │   └─────────────┘                    │
+│  └─────────┘  └────────┘   └────────┘          ↓                            │
+│       ↓            ↓            ↓         iwc_workflows                      │
+│  discourse_    gtn_        galaxy_faqs    collection                         │
+│  posts         tutorials   collection                                        │
+│  collection    collection                                                    │
+│                                                                              │
+│                       CHROMA VECTOR STORE                                    │
+│                     (./data/embeddings/)                                     │
+│                                                                              │
+│                    Total: ~81,600 embedded chunks                            │
+└──────────────────────────────────────────────────────────────────────────────┘
 ```
 
 ## Quick Start
@@ -71,6 +72,7 @@ make help
 make discourse-all   # Discourse forum posts
 make gtn            # GTN tutorials
 make faq            # Galaxy FAQs
+make iwc            # IWC workflows
 
 # Run all pipelines
 make update-all
@@ -79,7 +81,7 @@ make update-all
 make status
 ```
 
-## The Three Pipelines
+## The Four Pipelines
 
 ### 1. Discourse Pipeline
 
@@ -207,6 +209,57 @@ A: Galaxy workflows allow you to...
 }
 ```
 
+### 4. IWC Workflows Pipeline
+
+**Purpose**: Processes IWC (Intergalactic Workflow Commission) workflows documentation.
+
+**Source**: https://iwc.galaxyproject.org/workflow_manifest.json
+
+**Output**:
+- 105 workflows
+- 772 embedding chunks
+- Collection: `iwc_workflows`
+
+**Features**:
+- Fetches workflow manifest from IWC website
+- Extracts README, annotations, and metadata
+- Workflow step documentation
+- Category and collection organization
+- Author and DOI information
+
+**Usage**:
+```bash
+# Run IWC pipeline
+make iwc
+
+# With test query
+uv run python -m pipelines.iwc --test-query "your question"
+
+# Force rebuild
+uv run python -m pipelines.iwc --force-rebuild
+```
+
+**Document Structure**:
+```python
+Document(
+    page_content="# Workflow Name\n\nDescription...\n\nREADME content...",
+    metadata={
+        "source": "iwc://path/to/workflow",
+        "data_source": "iwc",
+        "content_type": "workflow",
+        "workflow_name": "Protein Structure Analysis",
+        "workflow_id": "protein-structure-analysis-main",
+        "topic": "computational-chemistry",
+        "categories": "Structural Biology",
+        "collections": "Computational Chemistry",
+        "authors": "Author Name",
+        "license": "MIT",
+        "doi": "10.5281/zenodo.12345",
+        "url": "https://iwc.galaxyproject.org/workflows/..."
+    }
+)
+```
+
 ## System Architecture
 
 ### Data Flow
@@ -303,7 +356,8 @@ uv run python -m pipelines.discourse --force-rebuild
 | Discourse | 5,986 | 70,516 | ~67 min | ~2 GB |
 | GTN | 168 | 9,295 | ~2 min | ~200 MB |
 | FAQ | 25 | 62 | <1 min | ~10 MB |
-| **Total** | **6,179** | **79,873** | **~70 min** | **~2.2 GB** |
+| IWC | 105 | 772 | ~15 sec | ~20 MB |
+| **Total** | **6,284** | **81,645** | **~70 min** | **~2.2 GB** |
 
 ### Optimization Tips
 
