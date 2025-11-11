@@ -4,15 +4,16 @@ Complete guide for integrating the ChatGXY Materials Pipeline into your RAG syst
 
 ## System Overview
 
-The ChatGXY Materials Pipeline provides three separate vector store collections containing Galaxy Project documentation:
+The ChatGXY Materials Pipeline provides four separate vector store collections containing Galaxy Project documentation:
 
 | Collection | Content | Documents | Chunks | Use Case |
 |------------|---------|-----------|--------|----------|
 | `galaxy_faqs` | FAQ Q&A pairs | 25 | 62 | Quick answers to common questions |
 | `gtn_tutorials` | Tutorial documentation | 168 | 9,295 | Detailed how-to guides |
 | `discourse_posts` | Forum discussions | 5,986 | 70,516 | Community solutions & troubleshooting |
+| `iwc_workflows` | Curated workflows | 105 | 772 | Analysis workflow documentation |
 
-**Total**: 6,179 documents → 79,873 embedded chunks
+**Total**: 6,284 documents → 81,645 embedded chunks
 
 ## Quick Integration
 
@@ -43,6 +44,12 @@ gtn_store = Chroma(
 
 discourse_store = Chroma(
     collection_name="discourse_posts",
+    embedding_function=embeddings,
+    persist_directory="./data/embeddings"
+)
+
+iwc_store = Chroma(
+    collection_name="iwc_workflows",
     embedding_function=embeddings,
     persist_directory="./data/embeddings"
 )
@@ -145,17 +152,66 @@ for result in results:
     print(f"URL: {result.metadata['url']}")
 ```
 
+### 4. IWC Workflows Collection (`iwc_workflows`)
+
+**Document Format**: Workflow name + README + annotations + step documentation
+
+**Metadata Schema**:
+```python
+{
+    "source": str,                # iwc://path/to/workflow
+    "data_source": "iwc",         # Always "iwc"
+    "content_type": "workflow",   # Always "workflow"
+    "workflow_name": str,         # Human-readable workflow name
+    "workflow_id": str,           # IWC workflow ID
+    "topic": str,                 # e.g. "computational-chemistry"
+    "path": str,                  # Directory path
+    "categories": str,            # Comma-separated (COVID-19, Structural Biology, etc.)
+    "collections": str,           # Comma-separated (Computational Chemistry, etc.)
+    "authors": str,               # Comma-separated author names
+    "orcids": str,                # Comma-separated ORCID identifiers
+    "license": str,               # License (e.g. "MIT")
+    "release": str,               # Version number
+    "doi": str,                   # DOI for citation
+    "updated": str,               # Last updated date
+    "url": str                    # Full URL to IWC page
+}
+```
+
+**Best For**: Finding analysis workflows, discovering methods, workflow documentation
+
+**Example Query**:
+```python
+results = iwc_store.similarity_search("RNA-seq analysis", k=5)
+for result in results:
+    print(f"Workflow: {result.metadata['workflow_name']}")
+    print(f"Topic: {result.metadata['topic']}")
+    print(f"Categories: {result.metadata['categories']}")
+    print(f"URL: {result.metadata['url']}")
+    print(f"DOI: {result.metadata['doi']}")
+```
+
+**Example Queries with Great Results**:
+- "RNA-seq analysis" → RNA-Seq workflows (single-end, paired-end, differential expression)
+- "variant calling" → Viral and COVID-19 variant calling workflows
+- "metagenomics" → MAGs generation, metaproteomics
+- "ChIP-seq" → ChIP-seq analysis workflows (single/paired-end, consensus peaks)
+- "molecular dynamics" → GROMACS workflows, protein-ligand parameterization
+- "single cell sequencing" → 10X Genomics, Scanpy workflows
+- "drug design" → Fragment-based docking, virtual screening
+
 ## Retrieval Strategies
 
 ### Strategy 1: Prioritized Search (Recommended)
 
-Search collections in priority order: FAQs → Tutorials → Discourse
+Search collections in priority order: FAQs → Workflows → Tutorials → Discourse
 
 ```python
 def prioritized_search(query: str, k: int = 5):
-    """Search with priority: FAQ > GTN > Discourse"""
+    """Search with priority: FAQ > IWC > GTN > Discourse"""
     results = {
         'faq': faq_store.similarity_search(query, k=k),
+        'workflows': iwc_store.similarity_search(query, k=k),
         'tutorials': gtn_store.similarity_search(query, k=k),
         'community': discourse_store.similarity_search(query, k=k)
     }
@@ -168,6 +224,10 @@ results = prioritized_search("How do I install Galaxy?")
 if results['faq']:
     print("Quick Answer:")
     print(results['faq'][0].page_content)
+
+print("\nRelevant Workflows:")
+for doc in results['workflows'][:3]:
+    print(f"- {doc.metadata['workflow_name']}")
 
 print("\nDetailed Guides:")
 for doc in results['tutorials'][:3]:
@@ -186,6 +246,7 @@ Combine all sources and re-rank by relevance
 def merged_search(query: str, k: int = 15):
     """Search all collections and merge results"""
     faq_results = faq_store.similarity_search_with_score(query, k=k)
+    iwc_results = iwc_store.similarity_search_with_score(query, k=k)
     gtn_results = gtn_store.similarity_search_with_score(query, k=k)
     discourse_results = discourse_store.similarity_search_with_score(query, k=k)
 
@@ -193,6 +254,8 @@ def merged_search(query: str, k: int = 15):
     all_results = []
     for doc, score in faq_results:
         all_results.append((doc, score, 'faq'))
+    for doc, score in iwc_results:
+        all_results.append((doc, score, 'workflow'))
     for doc, score in gtn_results:
         all_results.append((doc, score, 'tutorial'))
     for doc, score in discourse_results:
@@ -215,17 +278,21 @@ for doc, score, source in results:
 Apply different weights to different sources
 
 ```python
-def weighted_search(query: str, k: int = 10, weights={'faq': 2.0, 'gtn': 1.5, 'discourse': 1.0}):
+def weighted_search(query: str, k: int = 10, weights={'faq': 2.0, 'iwc': 1.8, 'gtn': 1.5, 'discourse': 1.0}):
     """Search with source-based weighting"""
     faq_results = faq_store.similarity_search_with_score(query, k=k*2)
+    iwc_results = iwc_store.similarity_search_with_score(query, k=k*2)
     gtn_results = gtn_store.similarity_search_with_score(query, k=k*2)
     discourse_results = discourse_store.similarity_search_with_score(query, k=k*2)
 
-    # Apply weights (boost FAQ and tutorials)
+    # Apply weights (boost FAQ, workflows, and tutorials)
     all_results = []
     for doc, score in faq_results:
         weighted_score = score / weights['faq']  # Lower score = better
         all_results.append((doc, weighted_score, 'faq'))
+    for doc, score in iwc_results:
+        weighted_score = score / weights['iwc']
+        all_results.append((doc, weighted_score, 'workflow'))
     for doc, score in gtn_results:
         weighted_score = score / weights['gtn']
         all_results.append((doc, weighted_score, 'tutorial'))
@@ -374,6 +441,7 @@ Synthesize these perspectives into a comprehensive answer:"""
 | Collection | Documents | Chunks | Avg Query Time | Memory Usage |
 |------------|-----------|--------|----------------|--------------|
 | galaxy_faqs | 25 | 62 | <10ms | ~5 MB |
+| iwc_workflows | 105 | 772 | ~20ms | ~20 MB |
 | gtn_tutorials | 168 | 9,295 | ~50ms | ~100 MB |
 | discourse_posts | 5,986 | 70,516 | ~200ms | ~2 GB |
 
@@ -471,12 +539,19 @@ discourse_store = Chroma(
     persist_directory="./data/embeddings"
 )
 
+iwc_store = Chroma(
+    collection_name="iwc_workflows",
+    embedding_function=embeddings,
+    persist_directory="./data/embeddings"
+)
+
 # Create RAG chain
 def answer_question(query: str):
     """Answer question using all available sources"""
 
     # Retrieve from all sources
     faq_docs = faq_store.similarity_search(query, k=2)
+    iwc_docs = iwc_store.similarity_search(query, k=2)
     gtn_docs = gtn_store.similarity_search(query, k=3)
     discourse_docs = discourse_store.similarity_search(query, k=3)
 
@@ -487,6 +562,11 @@ def answer_question(query: str):
         context_parts.append("Quick Answers:")
         for doc in faq_docs:
             context_parts.append(f"- {doc.page_content}")
+
+    if iwc_docs:
+        context_parts.append("\nRelevant Workflows:")
+        for doc in iwc_docs:
+            context_parts.append(f"- {doc.metadata['workflow_name']}: {doc.page_content[:300]}")
 
     if gtn_docs:
         context_parts.append("\nOfficial Tutorials:")
@@ -513,6 +593,8 @@ Answer (be specific and cite sources when relevant):"""
 
     # Add source URLs
     sources = []
+    for doc in iwc_docs[:2]:
+        sources.append(f"Workflow: {doc.metadata['workflow_name']} ({doc.metadata['url']})")
     for doc in gtn_docs[:2]:
         sources.append(f"Tutorial: {doc.metadata['title']} ({doc.metadata['source']})")
     for doc in discourse_docs[:2]:
