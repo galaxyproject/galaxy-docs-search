@@ -39,8 +39,8 @@ build/
 .DS_Store
 Thumbs.db
 
-# Test files
-test_*.py
+# Test files (exclude throwaway tests in root, but allow tests/ directory)
+/test_*.py
 
 # Log files
 *.log
