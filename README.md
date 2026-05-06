@@ -12,12 +12,12 @@ The system consists of four independent pipelines that populate separate Chroma 
 ├──────────────────────────────────────────────────────────────────────────────┤
 │                                                                              │
 │  DISCOURSE     GTN          FAQ          IWC WORKFLOWS                       │
-│  ┌─────────┐  ┌────────┐   ┌────────┐   ┌─────────────┐                    │
-│  │ 5,986   │  │  168   │   │   25   │   │     105     │                    │
-│  │ topics  │  │tutorial│   │  FAQs  │   │  workflows  │                    │
-│  │ 70,516  │  │ 9,295  │   │   62   │   │  772 chunks │                    │
-│  │ chunks  │  │ chunks │   │ chunks │   └─────────────┘                    │
-│  └─────────┘  └────────┘   └────────┘          ↓                            │
+│  ┌─────────┐  ┌────────┐   ┌────────┐   ┌─────────────┐                      │
+│  │ 5,986   │  │  168   │   │   25   │   │     105     │                      │
+│  │ topics  │  │tutorial│   │  FAQs  │   │  workflows  │                      │
+│  │ 70,516  │  │ 9,295  │   │   62   │   │  772 chunks │                      │
+│  │ chunks  │  │ chunks │   │ chunks │   └─────────────┘                      │
+│  └─────────┘  └────────┘   └────────┘          ↓                             │
 │       ↓            ↓            ↓         iwc_workflows                      │
 │  discourse_    gtn_        galaxy_faqs    collection                         │
 │  posts         tutorials   collection                                        │
