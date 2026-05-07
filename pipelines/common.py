@@ -11,10 +11,10 @@ from hashlib import sha256
 from datetime import datetime
 from tqdm import tqdm
 
-from langchain.text_splitter import RecursiveCharacterTextSplitter
+from langchain_text_splitters import RecursiveCharacterTextSplitter
 from langchain_openai import OpenAIEmbeddings
 from langchain_community.vectorstores import Chroma
-from langchain.schema import Document
+from langchain_core.documents import Document
 
 logger = logging.getLogger(__name__)
 
@@ -98,7 +98,7 @@ class EmbeddingPipeline:
         tracking_file: str,
         chunk_size: int = 512,
         chunk_overlap: int = 50,
-        model: str = "text-embedding-nomic-embed-text-v2-moe",
+        model: str | None = None,
         incremental: bool = True
     ):
         """
@@ -110,14 +110,14 @@ class EmbeddingPipeline:
             tracking_file: Path to document tracking file
             chunk_size: Size of text chunks in tokens (default: 512)
             chunk_overlap: Overlap between chunks in tokens (default: 50)
-            model: Embedding model to use (default: text-embedding-nomic-embed-text-v2-moe via LM Studio)
+            model: Embedding model to use (default: value from EMBEDDINGS_MODEL env)
             incremental: Enable incremental updates (default: True)
         """
         self.chroma_directory = Path(chroma_directory)
         self.collection_name = collection_name
         self.chunk_size = chunk_size
         self.chunk_overlap = chunk_overlap
-        self.model = model
+        self.model = model or os.getenv("EMBEDDINGS_MODEL", "text-embedding-nomic-embed-text-v2-moe")
         self.incremental = incremental
 
         # Initialize document tracker
