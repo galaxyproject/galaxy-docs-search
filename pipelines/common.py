@@ -98,7 +98,7 @@ class EmbeddingPipeline:
         tracking_file: str,
         chunk_size: int = 512,
         chunk_overlap: int = 50,
-        model: str = "text-embedding-nomic-embed-text-v2-moe",
+        model: str = None,
         incremental: bool = True
     ):
         """
@@ -110,14 +110,17 @@ class EmbeddingPipeline:
             tracking_file: Path to document tracking file
             chunk_size: Size of text chunks in tokens (default: 512)
             chunk_overlap: Overlap between chunks in tokens (default: 50)
-            model: Embedding model to use (default: text-embedding-nomic-embed-text-v2-moe via LM Studio)
+            model: Embedding model to use. If None, reads EMBEDDINGS_MODEL from
+                env, falling back to the LM Studio nomic-v2-moe default.
             incremental: Enable incremental updates (default: True)
         """
         self.chroma_directory = Path(chroma_directory)
         self.collection_name = collection_name
         self.chunk_size = chunk_size
         self.chunk_overlap = chunk_overlap
-        self.model = model
+        self.model = model or os.getenv(
+            "EMBEDDINGS_MODEL", "text-embedding-nomic-embed-text-v2-moe"
+        )
         self.incremental = incremental
 
         # Initialize document tracker
