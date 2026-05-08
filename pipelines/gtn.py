@@ -12,9 +12,19 @@ Usage:
 
 import os
 import logging
+import re
 import argparse
+import json
+from datetime import datetime
 from pathlib import Path
-from typing import List
+from typing import (
+    Any,
+    Optional,
+    Union,
+    List
+)
+from dataclasses import dataclass, field
+from hashlib import md5
 from dotenv import load_dotenv
 
 from langchain_community.document_loaders import DirectoryLoader, UnstructuredMarkdownLoader
@@ -31,6 +41,32 @@ logging.basicConfig(
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
 )
 logger = logging.getLogger(__name__)
+
+
+@dataclass
+class Tutorial:
+    """Represents a GTN tutorial with all its metadata."""
+
+    topic: str
+    tutorial: str
+    title: str
+    description: str = ""
+    url: str = ""
+    difficulty: str = "intermediate"
+    hands_on: bool = True
+    time_estimation: str = ""
+    content: str = ""
+    questions: str = ""
+    objectives: str = ""
+    key_points: str = ""
+    tools: list[str] = field(default_factory=list)
+    requirements: list[str] = field(default_factory=list)
+    tags: list[str] = field(default_factory=list)
+    content_hash: str = ""
+    last_modified: str = ""
+    gtn_commit: str = ""
+    zenodo_link: str = ""
+    workflows: list[str] = field(default_factory=list)
 
 
 class GTNPipeline:
@@ -63,12 +99,233 @@ class GTNPipeline:
             chroma_directory=chroma_directory,
             collection_name=collection_name,
             tracking_file=str(tracking_file),
-            incremental=incremental
+            incremental=incremental,
+            chunk_size=1024,
+            chunk_overlap=128
         )
 
         logger.info(f"GTN Pipeline initialized")
         logger.info(f"Source: {self.source_directory}")
         logger.info(f"Pattern: {self.pattern}")
+
+    '''def collect_tutorials(self):
+        """Collect all tutorials from the GTN repository."""
+        topics_dir = self.gtn_path / "topics"
+
+        if not topics_dir.exists():
+            raise ValueError(f"Topics directory not found: {topics_dir}")
+
+        # Iterate through all topics
+        for topic_dir in topics_dir.iterdir():
+            if not topic_dir.is_dir() or topic_dir.name.startswith("."):
+                continue
+
+            topic = topic_dir.name
+            tutorials_dir = topic_dir / "tutorials"
+
+            if not tutorials_dir.exists():
+                continue
+
+            # Iterate through tutorials in this topic
+            for tutorial_dir in tutorials_dir.iterdir():
+                if not tutorial_dir.is_dir():
+                    continue
+
+                tutorial_name = tutorial_dir.name
+                tutorial_file = tutorial_dir / "tutorial.md"
+
+                if tutorial_file.exists():
+                    try:
+                        tutorial = self.parse_tutorial(tutorial_file, topic, tutorial_name)
+                        if tutorial:
+                            self.tutorials.append(tutorial)
+                            logging.log.debug(f"Parsed tutorial: {topic}/{tutorial_name}")
+                    except (OSError, ValueError, KeyError) as e:
+                        logging.log.warning(f"Failed to parse {topic}/{tutorial_name}: {e}")'''
+
+    def parse_tutorial(self, tutorial_file: Path, content: str, topic: str, tutorial_name: str) -> Optional[Tutorial]:
+        """Parse a tutorial markdown file, returning None on failure."""
+        try:
+            #with open(tutorial_file, encoding="utf-8") as f:
+            #    content = f.read()
+
+            # Extract frontmatter (YAML between --- markers)
+            frontmatter = {}
+            if content.startswith("---"):
+                try:
+                    end_index = content.index("---", 3)
+                    yaml_content = content[3:end_index]
+                    frontmatter = self.parse_yaml_simple(yaml_content)
+                    # Remove frontmatter from content
+                    content = content[end_index + 3 :].strip()
+                except ValueError:
+                    pass
+
+            # Extract key sections from content
+            questions = self.extract_section(content, "questions")
+            objectives = self.extract_section(content, "objectives")
+            key_points = self.extract_section(content, "keypoints") or self.extract_section(content, "key_points")
+
+            # Build tutorial URL
+            base_url = "https://training.galaxyproject.org/training-material"
+            url = f"{base_url}/topics/{topic}/tutorials/{tutorial_name}/tutorial.html"
+
+            # Get file stats
+            stat = tutorial_file.stat()
+            last_modified = datetime.fromtimestamp(stat.st_mtime).isoformat()
+
+            # Calculate content hash
+            content_bytes = content.encode("utf-8")
+            content_hash = md5(content_bytes).hexdigest()
+
+            # Create tutorial object
+            tutorial = Tutorial(
+                topic=topic,
+                tutorial=tutorial_name,
+                title=frontmatter.get("title", tutorial_name.replace("-", " ").title()),
+                description=frontmatter.get("description", ""),
+                url=url,
+                difficulty=str(frontmatter.get("level", "intermediate")).lower(),
+                hands_on=frontmatter.get("hands_on", True) not in (False, "false", "False"),
+                time_estimation=frontmatter.get("time_estimation", ""),
+                content=content[:50000],  # Limit content size
+                questions=questions,
+                objectives=objectives,
+                key_points=key_points,
+                tools=self.extract_list(frontmatter.get("tools", [])),
+                requirements=self.extract_list(frontmatter.get("requirements", [])),
+                tags=self.extract_list(frontmatter.get("tags", [])),
+                content_hash=content_hash,
+                last_modified=last_modified,
+                zenodo_link=str(frontmatter.get("zenodo_link", "") or ""),
+            )
+
+            return tutorial
+
+        except (OSError, ValueError, KeyError) as e:
+            logging.log.warning(f"Error parsing tutorial {tutorial_file}: {e}")
+            return None
+        
+    def parse_yaml_simple(self, yaml_content: str) -> dict[str, Any]:
+        """Simple YAML frontmatter parser (no external dependencies)."""
+        result: dict[str, Any] = {}
+        current_list: Optional[list[str]] = None
+
+        for line in yaml_content.split("\n"):
+            line = line.rstrip()
+
+            # Skip empty lines and comments
+            if not line or line.startswith("#"):
+                continue
+
+            # Handle list items
+            if line.startswith("  - ") or line.startswith("- "):
+                if current_list is not None:
+                    item = line.strip("- ").strip()
+                    if item:
+                        current_list.append(item)
+                continue
+
+            # Handle key-value pairs (only top-level keys, not indented)
+            if ":" in line and not line.startswith(" ") and not line.startswith("\t"):
+                parts = line.split(":", 1)
+                key = parts[0].strip()
+                str_value = parts[1].strip() if len(parts) > 1 else ""
+
+                # Remove quotes if present
+                was_quoted = False
+                if str_value.startswith('"') and str_value.endswith('"'):
+                    str_value = str_value[1:-1]
+                    was_quoted = True
+                elif str_value.startswith("'") and str_value.endswith("'"):
+                    str_value = str_value[1:-1]
+                    was_quoted = True
+
+                # Check for boolean values
+                parsed_value: Union[str, bool, list[str]]
+                if str_value.lower() == "true":
+                    parsed_value = True
+                elif str_value.lower() == "false":
+                    parsed_value = False
+                elif str_value == "" and not was_quoted:
+                    # Unquoted empty value — this might be a list header
+                    current_list = []
+                    result[key] = current_list
+                    continue
+                else:
+                    parsed_value = str_value
+
+                result[key] = parsed_value
+                current_list = None
+
+        return result
+    
+    def extract_list(self, value: Any) -> list[str]:
+        """Extract a list from various input formats."""
+        if isinstance(value, list):
+            return [str(item) for item in value]
+        elif isinstance(value, str):
+            return [value]
+        else:
+            return []
+        
+    def extract_section(self, content: str, section_name: str) -> str:
+        """Extract a section from markdown content."""
+        escaped = re.escape(section_name)
+        patterns = [
+            rf"{{:\s*\.{escaped}.*?}}(.*?)(?:{{:|^#|\Z)",
+            rf">{{\%\s*icon\s+{escaped}.*?\%}}.*?\n(.*?)(?:^#|\Z)",
+            rf"<{escaped}.*?>(.*?)</{escaped}>",
+        ]
+
+        for pattern in patterns:
+            match = re.search(pattern, content, re.DOTALL | re.MULTILINE | re.IGNORECASE)
+            if match:
+                text = match.group(1).strip()
+                # Clean up the text
+                text = re.sub(r"^>\s*", "", text, flags=re.MULTILINE)
+                text = re.sub(r"{%.*?%}", "", text)
+                text = re.sub(r"{:.*?}", "", text)
+                return text.strip()[:1000]  # Limit section size
+
+        return ""
+    
+    def create_document(self, tutorial: Tutorial) -> Document:
+        """Create LlamaIndex documents from tutorials and FAQs."""
+        # Combine relevant text for embedding
+        text_parts = [
+            tutorial.title,
+            tutorial.description,
+            tutorial.content,
+            tutorial.questions,
+            tutorial.objectives,
+            tutorial.key_points,
+        ]
+        text = "\n".join(part for part in text_parts if part)
+
+        metadata = {
+            "type": "tutorial",
+            "topic": tutorial.topic,
+            "tutorial": tutorial.tutorial,
+            "title": tutorial.title,
+            "url": tutorial.url,
+            "difficulty": tutorial.difficulty,
+            "hands_on": tutorial.hands_on,
+            "time_estimation": tutorial.time_estimation,
+            "tools": json.dumps(tutorial.tools),
+            "requirements": json.dumps(tutorial.requirements),
+            "tags": json.dumps(tutorial.tags),
+            "content_hash": tutorial.content_hash,
+            "last_modified": tutorial.last_modified,
+            "zenodo_link": tutorial.zenodo_link,
+        }
+
+        doc = Document(
+            page_content=text,
+            metadata=metadata,
+            id_=f"tutorial_{tutorial.topic}_{tutorial.tutorial}"
+        )
+        return doc
 
     def load_documents(self) -> List[Document]:
         """
@@ -89,16 +346,41 @@ class GTNPipeline:
             )
             documents = loader.load()
 
+            parsed_documents = []
+
             # Add metadata to identify source
             for doc in documents:
                 doc.metadata["data_source"] = "gtn"
                 doc.metadata["content_type"] = "tutorial"
+                topic, tutorial = self.extract_names(doc.metadata.get("source", ""))
+                tutorial = self.parse_tutorial(Path(doc.metadata.get("source", "")), doc.page_content, topic, tutorial)
+                updated_doc = self.create_document(tutorial)
+                parsed_documents.append(updated_doc)
 
-            logger.info(f"Loaded {len(documents)} GTN tutorials")
-            return documents
+            logger.info(f"Loaded {len(parsed_documents)} GTN tutorials")
+            return parsed_documents
         except Exception as e:
             logger.error(f"Error loading GTN tutorials: {e}")
             raise
+
+    def extract_names(self, tutorial_path: str) -> tuple[str, str]:
+        p = Path(tutorial_path)
+
+        # Extract parts
+        parts = p.parts
+
+        # Find topic name
+        topic_index = parts.index("topics") + 1
+        topic_name = parts[topic_index]
+
+        # Find tutorial name
+        tutorial_index = parts.index("tutorials") + 1
+        tutorial_name = parts[tutorial_index]
+
+        print("Topic name:", topic_name)
+        print("Tutorial name:", tutorial_name)
+
+        return topic_name, tutorial_name
 
     def run(self, force_rebuild: bool = False, test_query: str = None):
         """
@@ -124,11 +406,15 @@ class GTNPipeline:
 
         if vectorstore and test_query:
             logger.info(f"Testing with query: {test_query}")
-            results = vectorstore.similarity_search(test_query, k=3)
-            logger.info(f"Found {len(results)} similar documents")
-            for i, result in enumerate(results, 1):
-                source = result.metadata.get('source', 'Unknown')
+            #results = vectorstore.similarity_search(test_query, k=1)
+            results_with_scores = vectorstore.similarity_search_with_score(test_query, k=5)
+            logger.info(f"Found {len(results_with_scores)} similar documents")
+            for i, (result, score) in enumerate(results_with_scores, 1):
+                source = result.metadata.get('url', 'Unknown')
                 logger.info(f"  {i}. {source}")
+                logger.info(f"Score  {score}")
+                logger.info(f"Content  {result.page_content}...")
+                logger.info("-" * 40)
 
         logger.info("=" * 60)
         logger.info("GTN Pipeline Complete")
