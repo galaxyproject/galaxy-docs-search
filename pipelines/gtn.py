@@ -350,13 +350,14 @@ class GTNPipeline:
 
             # Add metadata to identify source
             for doc in documents:
-                doc.metadata["data_source"] = "gtn"
-                doc.metadata["content_type"] = "tutorial"
-                topic, tutorial = self.extract_names(doc.metadata.get("source", ""))
-                tutorial = self.parse_tutorial(Path(doc.metadata.get("source", "")), doc.page_content, topic, tutorial)
+                src = doc.metadata.get("source", "")
+                topic, tutorial = self.extract_names(src)
+                tutorial = self.parse_tutorial(Path(src), doc.page_content, topic, tutorial)
                 updated_doc = self.create_document(tutorial)
+                updated_doc.metadata["source"] = src
+                updated_doc.metadata["data_source"] = "gtn"
+                updated_doc.metadata["content_type"] = "tutorial"
                 parsed_documents.append(updated_doc)
-
             logger.info(f"Loaded {len(parsed_documents)} GTN tutorials")
             return parsed_documents
         except Exception as e:
