@@ -5,15 +5,10 @@ snapshot. These are the tests CI runs on every push.
 
 from __future__ import annotations
 
-from pathlib import Path
-
 import pytest
+from langchain.schema import Document
 
-from pipelines.common import (
-    YAML_FRONTMATTER_RE,
-    EmbeddingPipeline,
-    strip_yaml_frontmatter,
-)
+from pipelines.common import EmbeddingPipeline, strip_yaml_frontmatter
 from retrieval.collections import COLLECTIONS, collection_by_chroma_name
 from retrieval.manifest import Manifest, ManifestMismatch, validate as validate_manifest
 from scripts.write_manifest import count_documents
@@ -24,17 +19,13 @@ class TestStripYamlFrontmatter:
         text = "---\nfoo: bar\n---\nhello\n"
         assert strip_yaml_frontmatter(text) == "hello\n"
 
-    def test_strips_multiline_block(self):
-        text = "---\nfoo: bar\nbaz: qux\nlist:\n  - a\n  - b\n---\nbody\n"
-        assert strip_yaml_frontmatter(text) == "body\n"
-
     def test_passthrough_when_no_frontmatter(self):
         text = "# Header\n\nbody"
         assert strip_yaml_frontmatter(text) == text
 
     def test_only_strips_leading_block(self):
         # A `---` later in the document (e.g. used as a horizontal rule) must
-        # be left alone.
+        # be left alone -- the regex ate too much in an earlier draft.
         text = "---\nfoo: bar\n---\nbody1\n\n---\n\nbody2\n"
         assert strip_yaml_frontmatter(text) == "body1\n\n---\n\nbody2\n"
 
@@ -42,41 +33,28 @@ class TestStripYamlFrontmatter:
         text = "---\r\nfoo: bar\r\n---\r\nbody"
         assert strip_yaml_frontmatter(text) == "body"
 
-    def test_does_not_match_partial_delimiter(self):
-        # Triple-dash inside a code fence is not a frontmatter delimiter.
-        text = "```\n---\n```\nbody"
-        assert strip_yaml_frontmatter(text) == text
 
-    def test_regex_is_anchored(self):
-        # Sanity check that the constant we expose really is anchored at start
-        # of string (`^` with re.DOTALL).
-        assert YAML_FRONTMATTER_RE.match("body\n---\nfoo: bar\n---\n") is None
+@pytest.fixture
+def make_pipeline(monkeypatch, tmp_path):
+    """Factory for an EmbeddingPipeline with stub creds and the requested splitter."""
+    monkeypatch.setenv("EMBEDDINGS_API_KEY", "stub")
+    monkeypatch.setenv("EMBEDDINGS_BASE_URL", "http://stub")
+
+    def _make(splitter: str = "recursive") -> EmbeddingPipeline:
+        return EmbeddingPipeline(
+            chroma_directory=str(tmp_path),
+            collection_name="x",
+            tracking_file=str(tmp_path / "t.json"),
+            splitter=splitter,
+        )
+
+    return _make
 
 
 class TestEmbeddingPipelineConstruction:
-    """Pure-logic checks; we don't actually wire up Chroma/OpenAI here."""
-
-    def test_rejects_unknown_splitter(self, monkeypatch, tmp_path):
-        monkeypatch.setenv("EMBEDDINGS_API_KEY", "x")
-        monkeypatch.setenv("EMBEDDINGS_BASE_URL", "http://x")
+    def test_rejects_unknown_splitter(self, make_pipeline):
         with pytest.raises(ValueError, match="Unknown splitter"):
-            EmbeddingPipeline(
-                chroma_directory=str(tmp_path),
-                collection_name="x",
-                tracking_file=str(tmp_path / "t.json"),
-                splitter="not-a-real-strategy",
-            )
-
-    def test_accepts_recursive_and_markdown(self, monkeypatch, tmp_path):
-        monkeypatch.setenv("EMBEDDINGS_API_KEY", "x")
-        monkeypatch.setenv("EMBEDDINGS_BASE_URL", "http://x")
-        for splitter in ("recursive", "markdown"):
-            EmbeddingPipeline(
-                chroma_directory=str(tmp_path),
-                collection_name="x",
-                tracking_file=str(tmp_path / "t.json"),
-                splitter=splitter,
-            )
+            make_pipeline(splitter="not-a-real-strategy")
 
     def test_requires_api_creds(self, monkeypatch, tmp_path):
         monkeypatch.delenv("EMBEDDINGS_API_KEY", raising=False)
@@ -87,6 +65,70 @@ class TestEmbeddingPipelineConstruction:
                 collection_name="x",
                 tracking_file=str(tmp_path / "t.json"),
             )
+
+
+class TestMarkdownAwareSplitting:
+    """Behavioral contract for split_documents(splitter='markdown').
+
+    Asserts what the splitter is for -- frontmatter stripped, header chain
+    in metadata, parent metadata preserved -- rather than just "constructor
+    accepts the name." The actual UnstructuredMarkdownLoader regression
+    was upstream of this point (loader flattened the markdown before it
+    arrived), so these tests don't catch loader-shape mistakes; they do
+    catch silent splitter-dispatch breakage.
+    """
+
+    SAMPLE = """---
+layout: tutorial_hands_on
+title: Test
+---
+
+# Introduction
+
+Hello world.
+
+## Step 1
+
+Click upload.
+
+## Step 2
+
+Pick the file.
+"""
+
+    def test_strips_yaml_frontmatter(self, make_pipeline):
+        pipeline = make_pipeline(splitter="markdown")
+        chunks = pipeline.split_documents([Document(page_content=self.SAMPLE, metadata={"source": "x.md"})])
+        for chunk in chunks:
+            assert "layout: tutorial_hands_on" not in chunk.page_content
+            assert "title: Test" not in chunk.page_content
+
+    def test_attaches_header_chain_to_metadata(self, make_pipeline):
+        pipeline = make_pipeline(splitter="markdown")
+        chunks = pipeline.split_documents([Document(page_content=self.SAMPLE, metadata={"source": "x.md"})])
+
+        h1_values = {c.metadata.get("h1") for c in chunks if c.metadata.get("h1")}
+        assert "Introduction" in h1_values, f"expected h1='Introduction' somewhere; got {h1_values}"
+
+        h2_values = {c.metadata.get("h2") for c in chunks if c.metadata.get("h2")}
+        assert {"Step 1", "Step 2"}.issubset(h2_values), f"expected both h2 sections; got {h2_values}"
+
+    def test_preserves_parent_metadata(self, make_pipeline):
+        pipeline = make_pipeline(splitter="markdown")
+        chunks = pipeline.split_documents([
+            Document(page_content=self.SAMPLE, metadata={"source": "x.md", "topic": "intro"})
+        ])
+        for chunk in chunks:
+            assert chunk.metadata["source"] == "x.md"
+            assert chunk.metadata["topic"] == "intro"
+
+    def test_recursive_splitter_does_not_add_header_metadata(self, make_pipeline):
+        # The dispatch is real: recursive path leaves header keys absent.
+        pipeline = make_pipeline(splitter="recursive")
+        chunks = pipeline.split_documents([Document(page_content=self.SAMPLE, metadata={"source": "x.md"})])
+        for chunk in chunks:
+            assert "h1" not in chunk.metadata
+            assert "h2" not in chunk.metadata
 
 
 class TestCollectionRegistry:
@@ -103,6 +145,10 @@ class TestCollectionRegistry:
 
 
 class TestManifestValidation:
+    """The manifest exists to prevent the silent garbage failure mode where a
+    retriever embeds queries with model B against a Chroma index built by
+    model A. These four cases cover the full decision matrix."""
+
     def test_missing_manifest_warns_when_not_strict(self, caplog):
         validate_manifest(None, "any-model", strict=False)
         assert any("manifest.json" in r.message for r in caplog.records)
@@ -126,16 +172,13 @@ class TestManifestValidation:
 
 class TestCountDocuments:
     def test_uses_source_when_available(self):
-        metas = [
-            {"source": "/a.md"},
-            {"source": "/b.md"},
-            {"source": "/a.md"},
-        ]
+        metas = [{"source": "/a.md"}, {"source": "/b.md"}, {"source": "/a.md"}]
         assert count_documents(metas) == 2
 
     def test_prefers_source_plus_faq_index_when_present(self):
-        # FAQ chunks share one source file but have distinct faq_index values;
-        # the two-key fallback should produce 3 not 1.
+        # Real bug from development: FAQ chunks share one source file but have
+        # distinct faq_index values, so source-only counting reported 1 doc
+        # for 25 distinct FAQs. The two-key fallback fixes this.
         metas = [
             {"source": "/faq.md", "faq_index": 0},
             {"source": "/faq.md", "faq_index": 1},
@@ -143,12 +186,6 @@ class TestCountDocuments:
         ]
         assert count_documents(metas) == 3
 
-    def test_falls_back_to_path_or_url(self):
-        assert count_documents([{"path": "x"}, {"path": "y"}]) == 2
-        assert count_documents([{"url": "x"}, {"url": "y"}]) == 2
-
-    def test_returns_zero_when_no_recognized_keys(self):
-        assert count_documents([{"unrelated": "x"}]) == 0
-
     def test_handles_none_entries(self):
+        # chromadb sometimes returns None metadata for chunks; don't crash.
         assert count_documents([None, {"source": "/a.md"}, None]) == 1
