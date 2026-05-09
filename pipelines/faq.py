@@ -63,7 +63,8 @@ class FAQPipeline:
             chroma_directory=chroma_directory,
             collection_name=collection_name,
             tracking_file=str(tracking_file),
-            incremental=incremental
+            incremental=incremental,
+            splitter="markdown",
         )
 
         logger.info(f"FAQ Pipeline initialized")

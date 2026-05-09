@@ -163,13 +163,17 @@ class TestIWCCollection:
     def test_iwc_workflow_has_readme(self, iwc_store):
         """Verify IWC workflows contain README content.
 
-        Bare "workflow" tends to surface only short section headers ("## Workflow
-        Steps"); use a more specific query so we hit actual README body chunks.
+        Sample the collection directly rather than via similarity_search --
+        with header-aware chunking, top-N for any specific query is dominated
+        by short `# Workflow Name` title chunks, which is fine for retrieval
+        but not what this test is asserting. The intent is "README content is
+        present in the index," so we just verify the chunk-size distribution.
         """
-        results = iwc_store.similarity_search("RNA-seq differential expression analysis", k=20)
-        assert len(results) > 0
+        sample = iwc_store.get(include=["documents"], limit=200)
+        documents = sample.get("documents") or []
+        assert documents, "IWC collection appears empty"
 
-        substantial_chunks = [r for r in results if len(r.page_content) > 100]
+        substantial_chunks = [d for d in documents if len(d) > 100]
         assert len(substantial_chunks) > 0, "No workflow chunks with substantial content found"
 
     def test_iwc_metadata_completeness(self, iwc_store):

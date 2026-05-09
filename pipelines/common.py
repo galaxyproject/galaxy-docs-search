@@ -1,22 +1,36 @@
 """
-Shared embedding logic for both GTN and Discourse pipelines.
+Shared embedding logic for the four pipelines (Discourse, GTN, FAQ, IWC).
 """
 
 import os
 import json
 import logging
+import re
 from pathlib import Path
 from typing import List, Dict, Set
 from hashlib import sha256
 from datetime import datetime
 from tqdm import tqdm
 
-from langchain.text_splitter import RecursiveCharacterTextSplitter
+from langchain.text_splitter import MarkdownHeaderTextSplitter, RecursiveCharacterTextSplitter
 from langchain_openai import OpenAIEmbeddings
 from langchain_community.vectorstores import Chroma
 from langchain.schema import Document
 
 logger = logging.getLogger(__name__)
+
+YAML_FRONTMATTER_RE = re.compile(r"^---\r?\n.*?\r?\n---\r?\n", re.DOTALL)
+MARKDOWN_HEADERS = [
+    ("#", "h1"),
+    ("##", "h2"),
+    ("###", "h3"),
+    ("####", "h4"),
+]
+
+
+def strip_yaml_frontmatter(text: str) -> str:
+    """Drop a leading YAML frontmatter block (`---\\n...\\n---\\n`) if present."""
+    return YAML_FRONTMATTER_RE.sub("", text, count=1)
 
 
 class DocumentTracker:
@@ -99,7 +113,8 @@ class EmbeddingPipeline:
         chunk_size: int = 512,
         chunk_overlap: int = 50,
         model: str = None,
-        incremental: bool = True
+        incremental: bool = True,
+        splitter: str = "recursive",
     ):
         """
         Initialize the embedding pipeline.
@@ -113,7 +128,15 @@ class EmbeddingPipeline:
             model: Embedding model to use. If None, reads EMBEDDINGS_MODEL from
                 env, falling back to the LM Studio nomic-v2-moe default.
             incremental: Enable incremental updates (default: True)
+            splitter: "recursive" (default) for plain RecursiveCharacterTextSplitter,
+                or "markdown" to first strip YAML frontmatter and split on
+                markdown headers (keeps the header chain in chunk metadata and
+                in the embedded text). Use "markdown" for authored-markdown
+                sources (GTN tutorials, IWC READMEs, FAQs) and leave the
+                default for free-form content like Discourse posts.
         """
+        if splitter not in {"recursive", "markdown"}:
+            raise ValueError(f"Unknown splitter {splitter!r}; expected 'recursive' or 'markdown'")
         self.chroma_directory = Path(chroma_directory)
         self.collection_name = collection_name
         self.chunk_size = chunk_size
@@ -122,6 +145,7 @@ class EmbeddingPipeline:
             "EMBEDDINGS_MODEL", "text-embedding-nomic-embed-text-v2-moe"
         )
         self.incremental = incremental
+        self.splitter = splitter
 
         # Initialize document tracker
         self.tracker = DocumentTracker(Path(tracking_file))
@@ -184,25 +208,43 @@ class EmbeddingPipeline:
 
     def split_documents(self, documents: List[Document]) -> List[Document]:
         """
-        Split documents into chunks using recursive character splitting.
-
-        Args:
-            documents: List of Document objects
-
-        Returns:
-            List of chunked Document objects
+        Split documents into chunks using the configured splitter.
         """
-        logger.info(f"Splitting {len(documents)} documents into chunks")
+        logger.info(f"Splitting {len(documents)} documents into chunks (splitter={self.splitter})")
 
-        text_splitter = RecursiveCharacterTextSplitter(
+        char_splitter = RecursiveCharacterTextSplitter(
             chunk_size=self.chunk_size,
             chunk_overlap=self.chunk_overlap,
             length_function=len,
             separators=["\n\n", "\n", ". ", " ", ""],
-            is_separator_regex=False
+            is_separator_regex=False,
         )
 
-        chunks = text_splitter.split_documents(documents)
+        if self.splitter == "recursive":
+            chunks = char_splitter.split_documents(documents)
+            logger.info(f"Created {len(chunks)} chunks from {len(documents)} documents")
+            return chunks
+
+        # Markdown-aware path: strip YAML frontmatter, split on `#` / `##` / ...,
+        # then recurse-split each section to enforce chunk_size. The header chain
+        # stays both in metadata (h1/h2/h3) and in the chunk text via
+        # strip_headers=False, so embeddings carry the section context.
+        md_splitter = MarkdownHeaderTextSplitter(
+            headers_to_split_on=MARKDOWN_HEADERS,
+            strip_headers=False,
+        )
+
+        chunks: List[Document] = []
+        for doc in documents:
+            body = strip_yaml_frontmatter(doc.page_content)
+            sections = md_splitter.split_text(body)
+            # Merge each section's header metadata into the parent doc metadata.
+            for section in sections:
+                merged = {**doc.metadata, **section.metadata}
+                section.metadata = merged
+            # Bound section size with the recursive splitter.
+            chunks.extend(char_splitter.split_documents(sections))
+
         logger.info(f"Created {len(chunks)} chunks from {len(documents)} documents")
         return chunks
 
