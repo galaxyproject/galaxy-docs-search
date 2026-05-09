@@ -18,7 +18,7 @@ load_dotenv()
 def embeddings():
     """Initialize embeddings for all tests."""
     return OpenAIEmbeddings(
-        model="text-embedding-nomic-embed-text-v2-moe",
+        model=os.getenv("EMBEDDINGS_MODEL"),
         openai_api_key=os.getenv("EMBEDDINGS_API_KEY"),
         openai_api_base=os.getenv("EMBEDDINGS_BASE_URL"),
         tiktoken_enabled=False,
@@ -58,7 +58,9 @@ class TestBioinformaticsWorkflows:
 
     @pytest.mark.parametrize("query,expected_workflow_keywords", [
         ("RNA sequencing differential expression", ["RNA-seq", "differential expression"]),
-        ("variant calling from NGS data", ["variant"]),
+        # IWC text uses "variation analysis" (the noun) where the query says
+        # "variant calling" -- accept either form.
+        ("variant calling from NGS data", ["variant", "variation"]),
         ("genome assembly from long reads", ["assembly", "flye", "genome"]),
         ("ChIP-seq peak calling", ["ChIP-seq", "peak"]),
         ("metagenomics taxonomic profiling", ["metagenomics", "MAG", "microbiome", "metaproteom"]),
@@ -71,7 +73,6 @@ class TestBioinformaticsWorkflows:
 
         assert len(results) > 0, f"No workflows found for: {query}"
 
-        # Check that results contain expected keywords
         all_content = " ".join([doc.page_content for doc in results])
         all_metadata = " ".join([
             doc.metadata.get('workflow_name', '') for doc in results
@@ -91,7 +92,6 @@ class TestTutorialDiscovery:
         results = gtn.similarity_search("getting started introduction basics", k=10)
 
         assert len(results) > 0
-        # Should find introductory content (check both metadata and content)
         found = any('intro' in doc.metadata.get('title', '').lower() or
                    'intro' in doc.metadata.get('source', '').lower() or
                    'start' in doc.metadata.get('source', '').lower() or
@@ -172,7 +172,6 @@ class TestSpecializedAnalyses:
 
         assert len(results) > 0
 
-        # Should find structural biology workflows
         categories = [doc.metadata.get('categories', '') for doc in results]
         topics = [doc.metadata.get('topic', '') for doc in results]
         combined = " ".join(categories + topics)

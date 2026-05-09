@@ -17,7 +17,7 @@ from pathlib import Path
 from typing import List
 from dotenv import load_dotenv
 
-from langchain_community.document_loaders import DirectoryLoader, UnstructuredMarkdownLoader
+from langchain_community.document_loaders import DirectoryLoader, TextLoader
 from langchain.schema import Document
 
 from .common import EmbeddingPipeline
@@ -63,7 +63,8 @@ class GTNPipeline:
             chroma_directory=chroma_directory,
             collection_name=collection_name,
             tracking_file=str(tracking_file),
-            incremental=incremental
+            incremental=incremental,
+            splitter="markdown",
         )
 
         logger.info(f"GTN Pipeline initialized")
@@ -80,12 +81,16 @@ class GTNPipeline:
         logger.info(f"Loading GTN tutorials from {self.source_directory}")
 
         try:
+            # TextLoader (not UnstructuredMarkdownLoader) so the raw markdown
+            # reaches the splitter -- Unstructured flattens `---` delimiters
+            # and drops `#` characters, which would defeat the header-aware split.
             loader = DirectoryLoader(
                 str(self.source_directory),
                 glob=self.pattern,
-                loader_cls=UnstructuredMarkdownLoader,
+                loader_cls=TextLoader,
+                loader_kwargs={"encoding": "utf-8"},
                 show_progress=True,
-                use_multithreading=True
+                use_multithreading=True,
             )
             documents = loader.load()
 

@@ -52,7 +52,8 @@ class IWCPipeline:
             chroma_directory=str(self.chroma_directory),
             collection_name=collection_name,
             tracking_file=str(tracking_file),
-            incremental=incremental
+            incremental=incremental,
+            splitter="markdown",
         )
 
         logger.info("IWC Pipeline initialized")

@@ -1,4 +1,4 @@
-.PHONY: help fetch convert embed all clean status
+.PHONY: help fetch convert embed all clean status manifest
 
 help:
 	@echo "Galaxy Documentation Embedding Pipeline"
@@ -27,7 +27,8 @@ help:
 	@echo "  make iwc        - Run IWC workflows pipeline"
 	@echo ""
 	@echo "All Pipelines:"
-	@echo "  make update-all - Run all pipelines (Discourse, GTN, FAQ, IWC)"
+	@echo "  make update-all - Run all pipelines (Discourse, GTN, FAQ, IWC) + write manifest"
+	@echo "  make manifest   - Write data/embeddings/manifest.json describing the snapshot"
 
 # Discourse pipeline targets
 fetch: discourse-fetch
@@ -83,7 +84,16 @@ update-all:
 	@echo "Running IWC workflows pipeline..."
 	$(MAKE) iwc
 	@echo ""
+	@echo "Writing manifest..."
+	$(MAKE) manifest
+	@echo ""
 	@echo "✅ All pipelines complete!"
+
+# Manifest -- describes the current snapshot so retrieval/MCP consumers can
+# validate they're talking to the right embedder.
+manifest:
+	@echo "📝 Writing data/embeddings/manifest.json..."
+	uv run python scripts/write_manifest.py
 
 # Cleanup
 clean:

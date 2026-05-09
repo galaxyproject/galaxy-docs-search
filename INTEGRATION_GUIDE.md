@@ -8,51 +8,89 @@ The ChatGXY Materials Pipeline provides four separate vector store collections c
 
 | Collection | Content | Documents | Chunks | Use Case |
 |------------|---------|-----------|--------|----------|
-| `galaxy_faqs` | FAQ Q&A pairs | 25 | 62 | Quick answers to common questions |
+| `galaxy_faqs` | FAQ Q&A pairs | 25 | 63 | Quick answers to common questions |
 | `gtn_tutorials` | Tutorial documentation | 168 | 9,295 | Detailed how-to guides |
 | `discourse_posts` | Forum discussions | 5,986 | 70,516 | Community solutions & troubleshooting |
-| `iwc_workflows` | Curated workflows | 105 | 772 | Analysis workflow documentation |
+| `iwc_workflows` | Curated workflows | 103 | 897 | Analysis workflow documentation |
 
-**Total**: 6,284 documents → 81,645 embedded chunks
+**Total**: 6,282 documents -> 80,771 embedded chunks (current snapshot; see `data/embeddings/manifest.json` for the live numbers).
+
+The current snapshot is embedded with TACC's `E5-Mistral-7B-Instruct` (4096 dimensions) via the OpenAI-compatible proxy at `https://ai.tejas.tacc.utexas.edu/v1`. The retriever validates this against `manifest.json` at startup, so you can't accidentally point a different embedder at the same Chroma store. Earlier snapshots used LM Studio + `nomic-embed-text-v2-moe` (768-dim); they're not interoperable.
 
 ## Quick Integration
 
-### Basic Setup
+There are two consumption paths depending on whether your code can import a Python module in the same process as the Chroma store:
+
+- **Python, same process** (e.g. ChatGXY running inside a Galaxy server): import `retrieval.GalaxyDocsRetriever` directly. No network hop, no MCP plumbing.
+- **Anything else** (TypeScript agents, separate services, anything that talks MCP): run `galaxy-docs-mcp` and call the `search_galaxy_docs` tool. See [MCP server](#mcp-server-galaxy-docs-mcp) below.
+
+### Python in-process: `retrieval.GalaxyDocsRetriever`
 
 ```python
-from langchain_community.vectorstores import Chroma
-from langchain_community.embeddings import LMStudioEmbeddings
+from retrieval import GalaxyDocsRetriever
 
-# Initialize embeddings (must match the embedding model used to create the stores)
-embeddings = LMStudioEmbeddings(
-    base_url="http://localhost:1234/v1",
-    model="text-embedding-nomic-embed-text-v2-moe"
+# Reads EMBEDDINGS_API_KEY / EMBEDDINGS_BASE_URL / EMBEDDINGS_MODEL from env.
+# Validates against data/embeddings/manifest.json so a model/data mismatch
+# is caught at construction time rather than at first query.
+r = GalaxyDocsRetriever(embeddings_dir="./data/embeddings")
+
+# Single-collection search.
+hits = r.search("how do I upload a fastq file", "discourse", k=5)
+for h in hits:
+    print(h.score, h.source_url, h.text[:120])
+
+# Fan out across all four collections (top-k from each, flat list).
+hits = r.search_all("rna-seq differential expression", per_collection_k=3)
+```
+
+`Hit` is a small dataclass: `text`, `score`, `collection`, `metadata`, plus a derived `source_url`. Each Chroma collection is loaded lazily on first hit and cached for the life of the process.
+
+### MCP server: `galaxy-docs-mcp`
+
+For non-Python consumers (Loom, other agents) the same retriever is exposed as a single FastMCP tool, `search_galaxy_docs(query, collection, k)`. `collection` is `"faqs" | "tutorials" | "discourse" | "workflows" | "all"` and the per-collection guidance lives in the tool's docstring so the calling LLM has enough signal to pick.
+
+Install the optional extra and run it:
+
+```bash
+pip install 'chatgxy-materials[mcp]'
+
+# stdio (default) -- subprocess-style consumers
+galaxy-docs-mcp
+
+# streamable-http -- hosted setups
+galaxy-docs-mcp --transport streamable-http --host 0.0.0.0 --port 8765
+```
+
+Env vars (in addition to the embedder ones above):
+
+- `GALAXY_DOCS_EMBEDDINGS_DIR` -- path to the Chroma persist dir (default `./data/embeddings`)
+- `GALAXY_DOCS_TRANSPORT` -- `stdio` | `streamable-http` | `sse` (default `stdio`)
+- `GALAXY_DOCS_HOST` / `GALAXY_DOCS_PORT` -- only used for HTTP transports
+
+### Raw langchain (advanced)
+
+If you need direct access to a `Chroma` instance for filters, custom retrievers, or anything the `GalaxyDocsRetriever` API doesn't expose:
+
+```python
+import os
+from langchain_community.vectorstores import Chroma
+from langchain_openai import OpenAIEmbeddings
+
+# Must match the embedder that built the snapshot -- check manifest.json.
+embeddings = OpenAIEmbeddings(
+    model=os.environ["EMBEDDINGS_MODEL"],
+    openai_api_key=os.environ["EMBEDDINGS_API_KEY"],
+    openai_api_base=os.environ["EMBEDDINGS_BASE_URL"],
+    tiktoken_enabled=False,
+    check_embedding_ctx_length=False,
 )
 
-# Load collections
 faq_store = Chroma(
     collection_name="galaxy_faqs",
     embedding_function=embeddings,
-    persist_directory="./data/embeddings"
+    persist_directory="./data/embeddings",
 )
-
-gtn_store = Chroma(
-    collection_name="gtn_tutorials",
-    embedding_function=embeddings,
-    persist_directory="./data/embeddings"
-)
-
-discourse_store = Chroma(
-    collection_name="discourse_posts",
-    embedding_function=embeddings,
-    persist_directory="./data/embeddings"
-)
-
-iwc_store = Chroma(
-    collection_name="iwc_workflows",
-    embedding_function=embeddings,
-    persist_directory="./data/embeddings"
-)
+# ...same for gtn_tutorials, discourse_posts, iwc_workflows
 ```
 
 ## Collection Schemas
