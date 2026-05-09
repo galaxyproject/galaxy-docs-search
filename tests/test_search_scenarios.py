@@ -61,8 +61,6 @@ class TestBioinformaticsWorkflows:
         # IWC text uses "variation analysis" (the noun) where the query says
         # "variant calling" -- accept either form.
         ("variant calling from NGS data", ["variant", "variation"]),
-        # Assembly workflows exist (VGP) but rank around k=10 with E5-Mistral;
-        # widen the search rather than gaming the top-5.
         ("genome assembly from long reads", ["assembly", "flye", "genome"]),
         ("ChIP-seq peak calling", ["ChIP-seq", "peak"]),
         ("metagenomics taxonomic profiling", ["metagenomics", "MAG", "microbiome", "metaproteom"]),
@@ -71,7 +69,7 @@ class TestBioinformaticsWorkflows:
     def test_find_analysis_workflow(self, all_stores, query, expected_workflow_keywords):
         """Test finding workflows for common analysis types."""
         iwc = all_stores['iwc']
-        results = iwc.similarity_search(query, k=15)
+        results = iwc.similarity_search(query, k=5)
 
         assert len(results) > 0, f"No workflows found for: {query}"
 
@@ -82,21 +80,16 @@ class TestBioinformaticsWorkflows:
         combined = (all_content + " " + all_metadata).lower()
 
         found_any = any(keyword.lower() in combined for keyword in expected_workflow_keywords)
-        assert found_any, f"Expected keywords {expected_workflow_keywords} not found in top 15 results"
+        assert found_any, f"Expected keywords {expected_workflow_keywords} not found in top 5 results"
 
 
 class TestTutorialDiscovery:
     """Test finding relevant tutorials."""
 
     def test_beginner_tutorials(self, all_stores):
-        """Test finding beginner-friendly tutorials.
-
-        Many GTN tutorials share identical YAML frontmatter, which clusters at
-        the same score under E5-Mistral; widen the top-k to find the actual
-        intro-tagged tutorials behind the cluster.
-        """
+        """Test finding beginner-friendly tutorials."""
         gtn = all_stores['gtn']
-        results = gtn.similarity_search("getting started introduction basics", k=30)
+        results = gtn.similarity_search("getting started introduction basics", k=10)
 
         assert len(results) > 0
         found = any('intro' in doc.metadata.get('title', '').lower() or
@@ -173,14 +166,9 @@ class TestSpecializedAnalyses:
         assert found_covid, "No COVID-19 workflows found"
 
     def test_structural_biology_workflows(self, all_stores):
-        """Test finding structural biology workflows.
-
-        E5-Mistral ranks the IWC structural-biology workflows below imaging /
-        transcriptomics for short generic queries; phrase as the actual tool
-        name + bump k so the test reflects whether the data is there at all.
-        """
+        """Test finding structural biology workflows."""
         iwc = all_stores['iwc']
-        results = iwc.similarity_search("molecular dynamics protein simulation gromacs", k=15)
+        results = iwc.similarity_search("protein structure molecular dynamics", k=5)
 
         assert len(results) > 0
 

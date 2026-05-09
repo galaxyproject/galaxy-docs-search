@@ -207,19 +207,15 @@ class TestGTNCollection:
         # Note: title and topic may not be in all documents due to chunking
 
     @pytest.mark.parametrize("query,expected_keywords", [
-        ("RNA sequencing analysis", ["rna", "transcriptom"]),
-        ("variant analysis", ["variant", "variation"]),
+        ("RNA-seq tutorial", ["rna", "transcriptom"]),
+        # IWC text uses "variation" as the noun where "variant" is the modifier;
+        # accept either form even though both surface the same tutorials.
+        ("variant calling guide", ["variant", "variation"]),
         ("proteomics tutorial", ["proteom"]),
     ])
     def test_gtn_tutorial_search(self, gtn_store, query, expected_keywords):
-        """Test GTN search for tutorials.
-
-        Note: GTN tutorial markdowns share `layout: tutorial_hands_on`
-        frontmatter, so phrasing the query as "X tutorial" tends to match
-        chunks of that frontmatter rather than topic-specific content. We use
-        topic phrasing instead and look across a broader top-k.
-        """
-        results = gtn_store.similarity_search(query, k=20)
+        """Test GTN search for tutorials."""
+        results = gtn_store.similarity_search(query, k=10)
         assert len(results) > 0
 
         combined_text = " ".join([
@@ -227,7 +223,7 @@ class TestGTNCollection:
             for doc in results
         ])
         found = any(keyword.lower() in combined_text for keyword in expected_keywords)
-        assert found, f"Expected keywords {expected_keywords} not found in top 20 results"
+        assert found, f"Expected keywords {expected_keywords} not found in top 10 results"
 
 
 class TestDiscourseCollection:
