@@ -123,13 +123,13 @@ def main():
     logger.info("")
     logger.info("Step 1: Migrating Topics")
     logger.info("-" * 60)
-    topic_count = migrate_topics(db, topics_file)
+    migrate_topics(db, topics_file)
 
     # Migrate documents
     logger.info("")
     logger.info("Step 2: Migrating Documents")
     logger.info("-" * 60)
-    doc_count = migrate_documents(db, documents_file)
+    migrate_documents(db, documents_file)
 
     # Show stats
     logger.info("")

@@ -6,7 +6,6 @@ for workflow documentation (README, annotations, metadata).
 """
 
 import os
-import json
 import logging
 import argparse
 import requests

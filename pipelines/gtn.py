@@ -67,7 +67,7 @@ class GTNPipeline:
             splitter="markdown",
         )
 
-        logger.info(f"GTN Pipeline initialized")
+        logger.info("GTN Pipeline initialized")
         logger.info(f"Source: {self.source_directory}")
         logger.info(f"Pattern: {self.pattern}")
 

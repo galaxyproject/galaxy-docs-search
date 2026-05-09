@@ -47,7 +47,7 @@ class DocumentTracker:
                 with open(self.tracking_file, 'r') as f:
                     return json.load(f)
             except json.JSONDecodeError:
-                logger.warning(f"Corrupted tracking file, starting fresh")
+                logger.warning("Corrupted tracking file, starting fresh")
                 return {"documents": {}, "last_run": None}
         return {"documents": {}, "last_run": None}
 

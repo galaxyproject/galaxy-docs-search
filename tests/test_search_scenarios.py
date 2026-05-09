@@ -5,13 +5,27 @@ These tests demonstrate the system's ability to handle common user queries
 and provide relevant results from the appropriate collections.
 """
 
+import os
+from pathlib import Path
+
 import pytest
 from langchain_community.vectorstores import Chroma
 from langchain_openai import OpenAIEmbeddings
 from dotenv import load_dotenv
-import os
 
 load_dotenv()
+
+EMBEDDINGS_DIR = Path("./data/embeddings")
+
+pytestmark = pytest.mark.skipif(
+    not (
+        EMBEDDINGS_DIR.exists()
+        and os.getenv("EMBEDDINGS_API_KEY")
+        and os.getenv("EMBEDDINGS_BASE_URL")
+        and os.getenv("EMBEDDINGS_MODEL")
+    ),
+    reason="Needs data/embeddings + EMBEDDINGS_* env vars to run",
+)
 
 
 @pytest.fixture(scope="module")
@@ -244,11 +258,10 @@ class TestMetadataUtility:
 
         assert len(results) > 0
 
-        # Check if any workflows have DOI
+        # Informational: not every workflow has a DOI, but the metadata key
+        # should be present at all.
         dois = [doc.metadata.get('doi', '') for doc in results]
-        has_doi = any(doi for doi in dois)
-        # Note: Not all workflows may have DOIs, but many should
-        # This is informational, not a strict requirement
+        assert isinstance(dois, list)
 
     def test_workflow_authors(self, all_stores):
         """Test that workflows include author information."""

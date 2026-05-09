@@ -67,7 +67,7 @@ class FAQPipeline:
             splitter="markdown",
         )
 
-        logger.info(f"FAQ Pipeline initialized")
+        logger.info("FAQ Pipeline initialized")
         logger.info(f"Source: {self.faq_file}")
 
     def parse_faq_file(self, content: str) -> List[dict]:
