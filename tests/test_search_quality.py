@@ -4,13 +4,27 @@ Test search quality across all Galaxy documentation collections.
 Tests semantic search accuracy, metadata completeness, and retrieval strategies.
 """
 
+import os
+from pathlib import Path
+
 import pytest
 from langchain_community.vectorstores import Chroma
 from langchain_openai import OpenAIEmbeddings
 from dotenv import load_dotenv
-import os
 
 load_dotenv()
+
+EMBEDDINGS_DIR = Path("./data/embeddings")
+
+pytestmark = pytest.mark.skipif(
+    not (
+        EMBEDDINGS_DIR.exists()
+        and os.getenv("EMBEDDINGS_API_KEY")
+        and os.getenv("EMBEDDINGS_BASE_URL")
+        and os.getenv("EMBEDDINGS_MODEL")
+    ),
+    reason="Needs data/embeddings + EMBEDDINGS_* env vars to run",
+)
 
 
 @pytest.fixture(scope="module")
@@ -279,16 +293,13 @@ class TestCrossCollectionSearch:
         assert gtn_store is not None
         assert discourse_store is not None
 
-    def test_workflow_search_across_collections(self, faq_store, iwc_store, gtn_store, discourse_store):
+    def test_workflow_search_across_collections(self, iwc_store, gtn_store):
         """Test workflow-related search finds relevant results in each collection."""
         query = "RNA-seq workflow"
 
-        faq_results = faq_store.similarity_search(query, k=1)
         iwc_results = iwc_store.similarity_search(query, k=1)
         gtn_results = gtn_store.similarity_search(query, k=1)
-        discourse_results = discourse_store.similarity_search(query, k=1)
 
-        # Should get results from at least IWC and GTN
         assert len(iwc_results) > 0, "IWC should have RNA-seq workflows"
         assert len(gtn_results) > 0, "GTN should have RNA-seq tutorials"
 

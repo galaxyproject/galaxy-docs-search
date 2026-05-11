@@ -18,11 +18,9 @@ import json
 import logging
 import argparse
 import sys
-import pickle
 from pathlib import Path
 from typing import List, Dict, Optional, Tuple
 from time import sleep
-from datetime import datetime
 from hashlib import sha256
 from dotenv import load_dotenv
 import requests
@@ -113,7 +111,7 @@ class DiscourseFetcher:
         # Create cache folder
         self.cache_folder.mkdir(parents=True, exist_ok=True)
 
-        logger.info(f"Discourse Fetcher initialized")
+        logger.info("Discourse Fetcher initialized")
         logger.info(f"API Base: {api_base}")
 
     def _read_json(self, path: Path) -> Optional[Dict]:
