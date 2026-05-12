@@ -11,7 +11,7 @@ from hashlib import sha256
 from datetime import datetime
 from tqdm import tqdm
 
-from langchain_text_splitters import RecursiveCharacterTextSplitter
+from langchain_text_splitters import RecursiveCharacterTextSplitter, MarkdownTextSplitter
 from langchain_openai import OpenAIEmbeddings
 from langchain_community.vectorstores import Chroma
 from langchain_core.documents import Document
@@ -198,7 +198,7 @@ class EmbeddingPipeline:
             separators=["\n\n", "\n", ". ", " ", ""],
             is_separator_regex=False
         )
-
+    
         chunks = text_splitter.split_documents(documents)
         logger.info(f"Created {len(chunks)} chunks from {len(documents)} documents")
         return chunks

@@ -100,48 +100,13 @@ class GTNPipeline:
             collection_name=collection_name,
             tracking_file=str(tracking_file),
             incremental=incremental,
-            chunk_size=1024,
-            chunk_overlap=128
+            chunk_size=1000,
+            chunk_overlap=50
         )
 
         logger.info(f"GTN Pipeline initialized")
         logger.info(f"Source: {self.source_directory}")
         logger.info(f"Pattern: {self.pattern}")
-
-    '''def collect_tutorials(self):
-        """Collect all tutorials from the GTN repository."""
-        topics_dir = self.gtn_path / "topics"
-
-        if not topics_dir.exists():
-            raise ValueError(f"Topics directory not found: {topics_dir}")
-
-        # Iterate through all topics
-        for topic_dir in topics_dir.iterdir():
-            if not topic_dir.is_dir() or topic_dir.name.startswith("."):
-                continue
-
-            topic = topic_dir.name
-            tutorials_dir = topic_dir / "tutorials"
-
-            if not tutorials_dir.exists():
-                continue
-
-            # Iterate through tutorials in this topic
-            for tutorial_dir in tutorials_dir.iterdir():
-                if not tutorial_dir.is_dir():
-                    continue
-
-                tutorial_name = tutorial_dir.name
-                tutorial_file = tutorial_dir / "tutorial.md"
-
-                if tutorial_file.exists():
-                    try:
-                        tutorial = self.parse_tutorial(tutorial_file, topic, tutorial_name)
-                        if tutorial:
-                            self.tutorials.append(tutorial)
-                            logging.log.debug(f"Parsed tutorial: {topic}/{tutorial_name}")
-                    except (OSError, ValueError, KeyError) as e:
-                        logging.log.warning(f"Failed to parse {topic}/{tutorial_name}: {e}")'''
 
     def parse_tutorial(self, tutorial_file: Path, content: str, topic: str, tutorial_name: str) -> Optional[Tutorial]:
         """Parse a tutorial markdown file, returning None on failure."""
@@ -286,9 +251,36 @@ class GTNPipeline:
                 text = re.sub(r"^>\s*", "", text, flags=re.MULTILINE)
                 text = re.sub(r"{%.*?%}", "", text)
                 text = re.sub(r"{:.*?}", "", text)
-                return text.strip()[:1000]  # Limit section size
+                return text.strip() #[:1000]  # Limit section size
 
         return ""
+    
+    def clean_markdown_for_embeddings(self, text):
+        # Remove fenced code blocks
+        text = re.sub(r"```.*?```", " ", text, flags=re.DOTALL)
+
+        # Remove inline code
+        text = re.sub(r"`([^`]*)`", r"\1", text)
+
+        # Markdown links
+        text = re.sub(r"\[([^\]]+)\]\([^)]+\)", r"\1", text)
+
+        # Images
+        text = re.sub(r"!\[.*?\]\(.*?\)", " ", text)
+
+        # Headers
+        text = re.sub(r"^#+\s*", "", text, flags=re.MULTILINE)
+
+        # Bold/italic
+        text = re.sub(r"[*_~]", "", text)
+
+        # HTML tags
+        text = re.sub(r"<[^>]+>", " ", text)
+
+        # Normalize whitespace
+        text = re.sub(r"\s+", " ", text)
+
+        return text.strip()
     
     def create_document(self, tutorial: Tutorial) -> Document:
         """Create LlamaIndex documents from tutorials and FAQs."""
@@ -302,6 +294,8 @@ class GTNPipeline:
             tutorial.key_points,
         ]
         text = "\n".join(part for part in text_parts if part)
+
+        #text = self.clean_markdown_for_embeddings(text)
 
         metadata = {
             "type": "tutorial",

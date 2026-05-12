@@ -77,6 +77,9 @@ make iwc            # IWC workflows
 # Run all pipelines
 make update-all
 
+# Ask the configurable RAG agent after embeddings exist
+make md-agent QUESTION="How do I create a workflow in Galaxy?"
+
 # Check status
 make status
 ```
@@ -369,6 +372,52 @@ uv run python -m pipelines.discourse --force-rebuild
 ## Integration with ChatGXY
 
 The pipelines produce Chroma vector stores that can be queried by the ChatGXY chatbot:
+
+### Configurable RAG Agent
+
+`pipelines.md_agent` provides a small tool-driven RAG agent. It searches
+configured Chroma collections, then sends the retrieved context to an
+OpenAI-compatible LLM with answer-framing instructions loaded from `SKILL.md`.
+The context can come from GTN Markdown tutorials, workflows, histories, FAQs,
+community posts, or any future collection you add.
+
+It registers tools through `agent.tool`:
+
+- `vector_search`: searches configured Chroma collections.
+- `read_context_file`: adds one local context file as extra context.
+
+Example:
+
+```bash
+uv run python -m pipelines.md_agent \
+  "How do I run RNA-seq analysis in Galaxy?" \
+  --skill-file SKILL.md \
+  --context-file README.md \
+  --top-k 8
+```
+
+Use `agent_config.example.json` as a starting point for adding more collections,
+for example `histories`.
+
+```bash
+uv run python -m pipelines.md_agent \
+  "Which workflow or history should I use for variant calling?" \
+  --config-file agent_config.example.json \
+  --collection histories
+```
+
+You can also pass a collection mapping directly:
+
+```bash
+uv run python -m pipelines.md_agent \
+  "Find a relevant Galaxy history for RNA-seq" \
+  --collections-json '{"histories":"galaxy_histories","workflows":"iwc_workflows"}'
+```
+
+The agent uses `EMBEDDINGS_API_KEY`, `EMBEDDINGS_BASE_URL`, and
+`EMBEDDINGS_MODEL` for vector search. For response generation, set
+`CHAT_API_KEY`, `CHAT_BASE_URL`, and `CHAT_MODEL`; if omitted, it falls back to
+the embedding API key/base URL and `gpt-4o-mini`.
 
 ```python
 from langchain_community.vectorstores import Chroma

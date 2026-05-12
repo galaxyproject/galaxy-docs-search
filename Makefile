@@ -25,6 +25,7 @@ help:
 	@echo ""
 	@echo "IWC Workflows Pipeline:"
 	@echo "  make iwc        - Run IWC workflows pipeline"
+	@echo "  make md-agent   - Ask the configurable RAG agent (QUESTION='...')"
 	@echo ""
 	@echo "All Pipelines:"
 	@echo "  make update-all - Run all pipelines (Discourse, GTN, FAQ, IWC)"
@@ -67,6 +68,14 @@ faq:
 iwc:
 	@echo "⚙️  Running IWC workflows pipeline..."
 	uv run python -m pipelines.iwc
+
+# Configurable RAG agent
+search-agent:
+	@if [ -z "$(QUESTION)" ]; then \
+		echo "Usage: make search-agent QUESTION='How do I create a workflow?'"; \
+		exit 1; \
+	fi
+	uv run python -m pipelines.search_agent "$(QUESTION)" $(ARGS)
 
 # Run all pipelines
 update-all:

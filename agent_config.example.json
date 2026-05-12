@@ -1,0 +1,31 @@
+{
+  "chroma_directory": "./data/embeddings",
+  "skill_file": "SKILL.md",
+  "chat_model": "gpt-4o-mini",
+  "embedding_model": "text-embedding-nomic-embed-text-v2-moe",
+  "context_chars": 2500,
+  "local_context_chars": 12000,
+  "collections": {
+    "faq": "galaxy_faqs",
+    "tutorials": "gtn_tutorials",
+    "workflows": "iwc_workflows",
+    "community": "discourse_posts",
+    "histories": "galaxy_histories"
+  },
+  "title_fields": [
+    "title",
+    "question",
+    "workflow_name",
+    "history_name",
+    "name",
+    "slug"
+  ],
+  "source_fields": [
+    "url",
+    "source",
+    "path",
+    "history_url",
+    "workflow_url",
+    "doi"
+  ]
+}
