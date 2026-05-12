@@ -14,6 +14,7 @@ from pathlib import Path
 from typing import Any, List, Dict
 from langchain_core.documents import Document
 from dotenv import load_dotenv
+from tqdm import tqdm
 
 from pipelines.common import EmbeddingPipeline
 
@@ -184,19 +185,6 @@ class IWCPipeline:
         if readme:
             content_parts.append(f"\n{readme}")
 
-        # Step annotations (for additional context)
-        '''steps = definition.get('steps', {})
-        if steps:
-            step_annotations = [
-                step.get('annotation', '').strip()
-                for step in steps.values()
-                if step.get('annotation', '').strip()
-            ]
-            if step_annotations:
-                content_parts.append("\n## Workflow Steps\n")
-                for i, ann in enumerate(step_annotations[:10], 1):  # Limit to 10
-                    content_parts.append(f"{i}. {ann}")'''
-
         page_content = "\n".join(content_parts)
 
         # Build metadata
@@ -226,7 +214,7 @@ class IWCPipeline:
             "doi": workflow.get('doi', ''),
             "updated": workflow.get('updated', ''),
             "summary_model": self.summary_model if workflow_summary else "",
-            #"workflow_summary": json.dumps(workflow_summary, ensure_ascii=False) if workflow_summary else "",
+            "workflow_summary": json.dumps(workflow_summary, ensure_ascii=False) if workflow_summary else "",
             "url": f"https://iwc.galaxyproject.org/workflow/{workflow_id}"
         }
 
@@ -506,24 +494,24 @@ class IWCPipeline:
         manifest = self.fetch_manifest()
 
         documents = []
-        for j, entry in enumerate(manifest):
+        for j, entry in enumerate(tqdm(manifest, desc="IWC manifest entries")):
             path = entry.get('path', '')
             workflows = entry.get('workflows', [])
 
-            for i, workflow in enumerate(workflows):
+            for i, workflow in enumerate(
+                tqdm(
+                    workflows,
+                    desc=f"IWC workflows {j + 1}/{len(manifest)}",
+                    leave=False,
+                )
+            ):
                 try:
                     doc = self.parse_workflow_to_document(workflow, path)
                     documents.append(doc)
-                    logger.info(f"Parsed workflow {i}: {doc.metadata['workflow_name']}' from {path}")
+                    logger.info(f"Parsed workflow {i / len(workflows) * 100:.1f}%: {doc.metadata['workflow_name']}' from {path}")
                 except Exception as e:
                     logger.error(f"Error parsing workflow at {path}: {e}")
                     continue
-                if i > 2:
-                    logger.info(f"Parsed {i+1} workflows from {path}")
-                    break
-            if j > 2:
-                logger.info(f"Parsed {j+1} workflow directories")
-                break   
 
         logger.info(f"Created {len(documents)} workflow documents")
         self.write_summary_records(documents)
@@ -547,8 +535,7 @@ class IWCPipeline:
         # Load documents
         documents = self.load_documents()
 
-        print(f"Loaded {len(documents)} workflow documents")
-        print(documents)
+        logger.info(f"Loaded {len(documents)} workflow documents")
 
         logger.info("Running embedding pipeline")
         # Run embedding pipeline
