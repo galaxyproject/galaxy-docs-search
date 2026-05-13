@@ -2,6 +2,7 @@
   "chroma_directory": "./data/embeddings",
   "skill_file": "SKILL.md",
   "chat_model": "gpt-4o-mini",
+  "evaluation_model": "gpt-4o-mini",
   "embedding_model": "text-embedding-nomic-embed-text-v2-moe",
   "context_chars": 2500,
   "local_context_chars": 12000,

@@ -25,7 +25,7 @@ logger = logging.getLogger(__name__)
 
 
 DEFAULT_OPENAI_BASE_URL = "https://api.openai.com/v1"
-DEFAULT_SUMMARIES_FILE = "data/workflow_summaries.json"
+DEFAULT_SUMMARIES_FILE = "data/iwc_workflow_summaries.json"
 
 
 SUMMARY_PROMPT = """You are an expert bioinformatics and Galaxy workflow analyst.

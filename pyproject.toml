@@ -16,6 +16,8 @@ dependencies = [
     "langchain-openai>=0.2",
     "langchain-ollama>=1.1.0",
     "langchain-text-splitters>=1.1.2",
+    "opik>=2.0.32",
+    "guardrails-ai>=0.10.0",
     # Vector database
     "chromadb>=0.5",
     # Document processing
@@ -39,6 +41,9 @@ dev = [
 
 [tool.hatch.build.targets.wheel]
 packages = ["pipelines"]
+
+[tool.uv.sources]
+guardrails-ai = { git = "https://github.com/guardrails-ai/guardrails.git" }
 
 [build-system]
 requires = ["hatchling"]

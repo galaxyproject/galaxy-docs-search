@@ -30,7 +30,7 @@ from tqdm import tqdm
 from multiprocessing import Pool, cpu_count
 from functools import partial
 
-from langchain.schema import Document
+from langchain_core.documents import Document
 
 from .common import EmbeddingPipeline
 from .database import DiscourseDB

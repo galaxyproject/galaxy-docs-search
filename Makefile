@@ -1,4 +1,4 @@
-.PHONY: help fetch convert embed all clean status
+.PHONY: help fetch convert embed all clean status published-workflows
 
 help:
 	@echo "Galaxy Documentation Embedding Pipeline"
@@ -25,6 +25,7 @@ help:
 	@echo ""
 	@echo "IWC Workflows Pipeline:"
 	@echo "  make iwc        - Run IWC workflows pipeline"
+	@echo "  make published-workflows - Download and embed published Galaxy workflows"
 	@echo ""
 	@echo "Galaxy Tools Pipeline:"
 	@echo "  make tools      - Run Galaxy tools help-text pipeline"
@@ -71,6 +72,10 @@ faq:
 iwc:
 	@echo "⚙️  Running IWC workflows pipeline..."
 	uv run python -m pipelines.iwc
+
+published-workflows:
+	@echo "⚙️  Running published Galaxy workflows pipeline..."
+	uv run python -m pipelines.published_workflows
 
 # Galaxy tools pipeline
 tools:

@@ -469,6 +469,23 @@ The agent uses `EMBEDDINGS_API_KEY`, `EMBEDDINGS_BASE_URL`, and
 `CHAT_API_KEY`, `CHAT_BASE_URL`, and `CHAT_MODEL`; if omitted, it falls back to
 the embedding API key/base URL and `gpt-4o-mini`.
 
+To trace retrieval, answer generation, and LLM-as-judge evaluation with Opik,
+run the agent with `--evaluate`. The OpenAI client is wrapped with Opik's
+OpenAI integration, and the agent uses `@opik.track` spans around vector search,
+answer generation, and evaluation. Set `EVALUATION_MODEL` or pass
+`--evaluation-model` to choose the judge model. For OpenAI-compatible judge
+endpoints, set `EVALUATION_BASE_URL` and `EVALUATION_API_KEY`; if omitted, the
+evaluator falls back to `CHAT_BASE_URL`/`CHAT_API_KEY`, then the OpenAI or
+embedding API settings.
+
+```bash
+uv run python -m pipelines.search_agent \
+  "How do I use FastQC in Galaxy?" \
+  --collection tools \
+  --evaluate \
+  --json
+```
+
 ```python
 from langchain_community.vectorstores import Chroma
 from langchain_community.embeddings import LMStudioEmbeddings
