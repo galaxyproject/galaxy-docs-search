@@ -25,10 +25,13 @@ help:
 	@echo ""
 	@echo "IWC Workflows Pipeline:"
 	@echo "  make iwc        - Run IWC workflows pipeline"
+	@echo ""
+	@echo "Galaxy Tools Pipeline:"
+	@echo "  make tools      - Run Galaxy tools help-text pipeline"
 	@echo "  make md-agent   - Ask the configurable RAG agent (QUESTION='...')"
 	@echo ""
 	@echo "All Pipelines:"
-	@echo "  make update-all - Run all pipelines (Discourse, GTN, FAQ, IWC)"
+	@echo "  make update-all - Run all pipelines (Discourse, GTN, FAQ, IWC, Tools)"
 
 # Discourse pipeline targets
 fetch: discourse-fetch
@@ -69,6 +72,11 @@ iwc:
 	@echo "⚙️  Running IWC workflows pipeline..."
 	uv run python -m pipelines.iwc
 
+# Galaxy tools pipeline
+tools:
+	@echo "🧰 Running Galaxy tools pipeline..."
+	uv run python -m pipelines.tools
+
 # Configurable RAG agent
 search-agent:
 	@if [ -z "$(QUESTION)" ]; then \
@@ -91,6 +99,9 @@ update-all:
 	@echo ""
 	@echo "Running IWC workflows pipeline..."
 	$(MAKE) iwc
+	@echo ""
+	@echo "Running Galaxy tools pipeline..."
+	$(MAKE) tools
 	@echo ""
 	@echo "✅ All pipelines complete!"
 

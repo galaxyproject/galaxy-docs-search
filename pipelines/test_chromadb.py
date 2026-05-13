@@ -36,14 +36,19 @@ def search_chromadb_vectors(store_path: str, query: str, top_k: int = 5):
         embedding_function=embeddings
     )
 
+    galaxy_tools_vectorstore = Chroma(
+        persist_directory=store_path,
+        collection_name="galaxy_tools",
+        embedding_function=embeddings
+    )
+
     print("Using Chroma vector store for similarity search using query:", query)
 
     results_with_scores = {
         'iwc': iwc_vectorstore.similarity_search_with_score(query, k=top_k),
         'gtn': gtn_vectorstore.similarity_search_with_score(query, k=top_k),
+        'galaxy_tools': galaxy_tools_vectorstore.similarity_search_with_score(query, k=top_k),
     }
-
-    #results_with_scores = vectorstore.similarity_search_with_score(query, k=5)
 
     print(f"Found {len(results_with_scores['iwc'])} similar IWC documents and {len(results_with_scores['gtn'])} similar GTN documents")
 
@@ -59,6 +64,14 @@ def search_chromadb_vectors(store_path: str, query: str, top_k: int = 5):
     print("\nTop similar GTN documents with scores:")
 
     for i, (doc, score) in enumerate(results_with_scores['gtn'], start=1):
+        print("=" * 80)
+        print(f"Metadata: {doc.metadata}")
+        print(f"Content: {doc.page_content}")
+        print(f"Score: {score: 0.3f}")
+        print("=" * 80)
+
+    print("\nTop similar Galaxy Tools documents with scores:")
+    for i, (doc, score) in enumerate(results_with_scores['galaxy_tools'], start=1):
         print("=" * 80)
         print(f"Metadata: {doc.metadata}")
         print(f"Content: {doc.page_content}")

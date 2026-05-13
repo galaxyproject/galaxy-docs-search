@@ -43,6 +43,7 @@ DEFAULT_COLLECTIONS: dict[str, str] = {
     "faq": "galaxy_faqs",
     "tutorials": "gtn_tutorials",
     "workflows": "iwc_workflows",
+    "tools": "galaxy_tools",
     "community": "discourse_posts",
 }
 
@@ -68,21 +69,22 @@ DEFAULT_SKILL_TEXT = """# Galaxy Training Network (GTN) RAG Answering Skill
 
 You are a Galaxy training specialist. Answer user questions using real retrieved
 Galaxy context, not invented steps. Context may include GTN tutorials, FAQs,
-workflow records, history records, community posts, or future indexed
-collections.
+workflow records, Galaxy tool help, history records, community posts, or future
+indexed collections.
 
 Before framing an answer, call the available RAG tools to retrieve context. Do
 not answer from memory. Use vector_search(query, top_k, collection) to search a
 configured Chroma collection alias, and use read_context_file(path) only when a
 local context file is explicitly supplied.
 
-Default collection aliases are faq, tutorials, workflows, histories when
+Default collection aliases are faq, tutorials, workflows, tools, histories when
 configured, and community. For definitional or quick how-to questions, search
 faq first. For broad analysis questions, search tutorials first, then workflows
 if the user asks for runnable workflows or the tutorial hit is weak. For
 workflow-specific questions, search workflows first. For history-specific
-questions, search histories first if configured. For troubleshooting, prefer
-official FAQ/tutorial/workflow results before community posts.
+questions, search histories first if configured. For tool usage, parameter, or
+input/output questions, search tools first. For troubleshooting, prefer official
+FAQ/tutorial/workflow/tool results before community posts.
 
 Before answering, infer which retrieved sources are most relevant:
 
@@ -118,7 +120,7 @@ history names, or clear source titles.
 class AgentConfig:
     """Runtime configuration for retrieval and answer framing."""
 
-    chroma_directory: str = "./data/embeddings"
+    chroma_directory: str = "./data/embeddings_raw"
     collections: dict[str, str] | None = None
     skill_file: str | None = None
     embedding_model: str | None = None
@@ -176,7 +178,7 @@ class MarkdownRAGAgent:
 
     def __init__(
         self,
-        chroma_directory: str = "./data/embeddings",
+        chroma_directory: str = "./data/embeddings_raw",
         collections: dict[str, str] | None = None,
         skill_file: str | None = None,
         embedding_model: str | None = None,
@@ -512,7 +514,7 @@ def main() -> None:
     )
     parser.add_argument(
         "--chroma-dir",
-        default=os.getenv("CHROMA_DIRECTORY", "./data/embeddings"),
+        default=os.getenv("CHROMA_DIRECTORY", "./data/embeddings_raw"),
         help="Directory containing persisted Chroma collections",
     )
     parser.add_argument(

@@ -9,6 +9,7 @@
     "faq": "galaxy_faqs",
     "tutorials": "gtn_tutorials",
     "workflows": "iwc_workflows",
+    "tools": "galaxy_tools",
     "community": "discourse_posts",
     "histories": "galaxy_histories"
   },

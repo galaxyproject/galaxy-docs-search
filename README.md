@@ -4,7 +4,7 @@ A complete RAG (Retrieval-Augmented Generation) system for the Galaxy Project th
 
 ## Overview
 
-The system consists of four independent pipelines that populate separate Chroma vector store collections:
+The system consists of five independent pipelines that populate separate Chroma vector store collections:
 
 ```
 ┌──────────────────────────────────────────────────────────────────────────────┐
@@ -73,6 +73,7 @@ make discourse-all   # Discourse forum posts
 make gtn            # GTN tutorials
 make faq            # Galaxy FAQs
 make iwc            # IWC workflows
+make tools          # Galaxy tool help text
 
 # Run all pipelines
 make update-all
@@ -84,7 +85,7 @@ make md-agent QUESTION="How do I create a workflow in Galaxy?"
 make status
 ```
 
-## The Four Pipelines
+## The Five Pipelines
 
 ### 1. Discourse Pipeline
 
@@ -263,6 +264,54 @@ Document(
 )
 ```
 
+### 5. Galaxy Tools Pipeline
+
+**Purpose**: Fetches Galaxy tool metadata and embeds each tool wrapper's help text.
+
+**Source**: https://usegalaxy.org/api/tools and each tool's `raw_tool_source` API endpoint.
+
+**Output**:
+- One document per Galaxy tool
+- Collection: `galaxy_tools`
+- Inspection artifacts: `data/tools_only.json`, `data/tools_metadata.tsv`, `data/tools_helptext.tsv`
+
+**Features**:
+- Recursively walks the Galaxy tool panel and keeps section metadata
+- Extracts `<help>...</help>` from raw Galaxy tool wrappers
+- Converts Galaxy wrapper help Markdown/reStructuredText-like text to plain text for embeddings
+- Incremental updates through the shared embedding tracker
+
+**Usage**:
+```bash
+# Run Galaxy tools pipeline
+make tools
+
+# Process only the first N tools while testing
+uv run python -m pipelines.tools --tool-limit 25
+
+# With test query
+uv run python -m pipelines.tools --test-query "How do I run fastqc?"
+
+# Force rebuild
+uv run python -m pipelines.tools --force-rebuild
+```
+
+**Document Structure**:
+```python
+Document(
+    page_content="# FastQC\nTool ID: ...\nDescription: ...\n\n## Help\n...",
+    metadata={
+        "source": "galaxy-tool://toolshed.g2.bx.psu.edu/repos/...",
+        "data_source": "usegalaxy_tools",
+        "content_type": "tool_help",
+        "tool_id": "toolshed.g2.bx.psu.edu/repos/...",
+        "name": "FastQC",
+        "panel_section_name": "FASTA/FASTQ",
+        "url": "https://usegalaxy.org/root?tool_id=..."
+    }
+)
+```
+
 ## System Architecture
 
 ### Data Flow
@@ -360,6 +409,7 @@ uv run python -m pipelines.discourse --force-rebuild
 | GTN | 168 | 9,295 | ~2 min | ~200 MB |
 | FAQ | 25 | 62 | <1 min | ~10 MB |
 | IWC | 105 | 772 | ~15 sec | ~20 MB |
+| Tools | varies | varies | varies | varies |
 | **Total** | **6,284** | **81,645** | **~70 min** | **~2.2 GB** |
 
 ### Optimization Tips
@@ -378,8 +428,8 @@ The pipelines produce Chroma vector stores that can be queried by the ChatGXY ch
 `pipelines.md_agent` provides a small tool-driven RAG agent. It searches
 configured Chroma collections, then sends the retrieved context to an
 OpenAI-compatible LLM with answer-framing instructions loaded from `SKILL.md`.
-The context can come from GTN Markdown tutorials, workflows, histories, FAQs,
-community posts, or any future collection you add.
+The context can come from GTN Markdown tutorials, workflows, Galaxy tool help,
+histories, FAQs, community posts, or any future collection you add.
 
 It registers tools through `agent.tool`:
 
@@ -411,7 +461,7 @@ You can also pass a collection mapping directly:
 ```bash
 uv run python -m pipelines.md_agent \
   "Find a relevant Galaxy history for RNA-seq" \
-  --collections-json '{"histories":"galaxy_histories","workflows":"iwc_workflows"}'
+  --collections-json '{"histories":"galaxy_histories","workflows":"iwc_workflows","tools":"galaxy_tools"}'
 ```
 
 The agent uses `EMBEDDINGS_API_KEY`, `EMBEDDINGS_BASE_URL`, and
@@ -539,8 +589,14 @@ make gtn                  # Run GTN pipeline
 # FAQ Pipeline
 make faq                  # Run FAQ pipeline
 
+# IWC Pipeline
+make iwc                  # Run IWC workflows pipeline
+
+# Galaxy Tools Pipeline
+make tools                # Run Galaxy tools help-text pipeline
+
 # All Pipelines
-make update-all           # Run all three pipelines
+make update-all           # Run all pipelines
 
 # Utilities
 make status               # Show database stats

@@ -18,7 +18,7 @@ from pathlib import Path
 from typing import List
 from dotenv import load_dotenv
 
-from langchain.schema import Document
+from langchain_core.documents import Document
 
 from .common import EmbeddingPipeline
 
