@@ -2,11 +2,20 @@
 """
 Galaxy FAQ Pipeline
 
-Processes Galaxy FAQ documents and creates embeddings.
-Each FAQ (Q&A pair) becomes a single chunk for better retrieval.
+Walks the GTN training-material repo for FAQ files and embeds them.
+
+We discover FAQs the same way the GTN Jekyll site does -- any `.md` file
+whose YAML frontmatter has `layout: faq` is an FAQ. That catches all four
+tiers without hard-coding paths:
+
+    faqs/galaxy/*.md
+    faqs/gtn/*.md
+    topics/<topic>/faqs/*.md
+    topics/<topic>/tutorials/<tut>/faqs/*.md
 
 Usage:
     python -m pipelines.faq
+    python -m pipelines.faq --source-dir /path/to/training-material
     python -m pipelines.faq --force-rebuild
 """
 
@@ -15,17 +24,16 @@ import re
 import logging
 import argparse
 from pathlib import Path
-from typing import List
+from typing import List, Optional
 from dotenv import load_dotenv
 
+import yaml
 from langchain.schema import Document
 
 from .common import EmbeddingPipeline
 
-# Load environment variables
 load_dotenv()
 
-# Configure logging
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
@@ -33,31 +41,89 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 
+FRONTMATTER_RE = re.compile(r"^---\r?\n(.*?)\r?\n---\r?\n(.*)\Z", re.DOTALL)
+LIQUID_TAG_RE = re.compile(r"\{%.*?%\}", re.DOTALL)
+LIQUID_VAR_RE = re.compile(r"\{\{.*?\}\}", re.DOTALL)
+
+# Locale-mirror FAQ directories that duplicate `faqs/galaxy/` in other
+# languages. Skipped by default to keep retrieval results in English.
+TRANSLATION_DIRS = {"galaxy-de", "galaxy-es", "galaxy-fr", "galaxy-it"}
+
+
+def split_frontmatter(text: str) -> tuple[Optional[dict], str]:
+    """Return (frontmatter_dict, body). frontmatter_dict is None if absent."""
+    m = FRONTMATTER_RE.match(text)
+    if not m:
+        return None, text
+    try:
+        fm = yaml.safe_load(m.group(1)) or {}
+    except yaml.YAMLError:
+        return None, text
+    if not isinstance(fm, dict):
+        return None, text
+    return fm, m.group(2)
+
+
+def strip_liquid(text: str) -> str:
+    """Drop Liquid tags ({% %}) and variables ({{ }}) so embeddings see clean prose."""
+    text = LIQUID_TAG_RE.sub("", text)
+    text = LIQUID_VAR_RE.sub("", text)
+    text = re.sub(r"\n{3,}", "\n\n", text)
+    return text.strip()
+
+
+def classify_tier(rel_path: Path) -> tuple[str, Optional[str], Optional[str]]:
+    """
+    Determine which FAQ tier a file belongs to.
+
+    Returns (tier, topic, tutorial) where tier is one of:
+        galaxy | gtn | topic | tutorial | other
+    """
+    parts = rel_path.parts
+    # faqs/{galaxy,gtn,galaxy-de,...}/*.md
+    if len(parts) >= 3 and parts[0] == "faqs":
+        bucket = parts[1]
+        if bucket == "gtn":
+            return "gtn", None, None
+        if bucket == "galaxy" or bucket in TRANSLATION_DIRS:
+            return "galaxy", None, None
+        return "other", None, None
+    # topics/<topic>/faqs/*.md
+    # topics/<topic>/tutorials/<tut>/faqs/*.md
+    if len(parts) >= 4 and parts[0] == "topics" and "faqs" in parts:
+        topic = parts[1]
+        if "tutorials" in parts:
+            try:
+                tut_idx = parts.index("tutorials")
+                tutorial = parts[tut_idx + 1]
+                return "tutorial", topic, tutorial
+            except (ValueError, IndexError):
+                pass
+        return "topic", topic, None
+    return "other", None, None
+
+
+def is_translation(rel_path: Path) -> bool:
+    parts = rel_path.parts
+    return len(parts) >= 2 and parts[0] == "faqs" and parts[1] in TRANSLATION_DIRS
+
+
 class FAQPipeline:
-    """Pipeline for processing Galaxy FAQ documents."""
+    """Walks the GTN repo for FAQ files and embeds them."""
 
     def __init__(
         self,
-        faq_file: str,
+        source_directory: str,
         chroma_directory: str = "./data/embeddings",
         collection_name: str = "galaxy_faqs",
-        incremental: bool = True
+        incremental: bool = True,
+        include_translations: bool = False,
     ):
-        """
-        Initialize FAQ pipeline.
+        self.source_directory = Path(source_directory)
+        if not self.source_directory.is_dir():
+            raise FileNotFoundError(f"FAQ source directory not found: {source_directory}")
+        self.include_translations = include_translations
 
-        Args:
-            faq_file: Path to FAQ markdown file
-            chroma_directory: Path to persist Chroma database
-            collection_name: Name of the Chroma collection
-            incremental: Enable incremental updates
-        """
-        self.faq_file = Path(faq_file)
-
-        if not self.faq_file.exists():
-            raise FileNotFoundError(f"FAQ file not found: {faq_file}")
-
-        # Initialize embedding pipeline
         tracking_file = Path(chroma_directory) / ".faq_tracking.json"
         self.pipeline = EmbeddingPipeline(
             chroma_directory=chroma_directory,
@@ -68,144 +134,76 @@ class FAQPipeline:
         )
 
         logger.info("FAQ Pipeline initialized")
-        logger.info(f"Source: {self.faq_file}")
+        logger.info(f"Source: {self.source_directory}")
+        logger.info(f"Include translations: {include_translations}")
 
-    def parse_faq_file(self, content: str) -> List[dict]:
-        """
-        Parse FAQ markdown into individual Q&A pairs.
-
-        Each ## heading is a question, followed by the answer.
-
-        Args:
-            content: Markdown content
-
-        Returns:
-            List of dicts with 'question', 'answer', and 'category'
-        """
-        faqs = []
-
-        # Split by ## headings (questions)
-        # First, extract the content after TOC
-        toc_match = re.search(r'\{:toc\}', content)
-        if toc_match:
-            content = content[toc_match.end():]
-
-        # Find all sections (# headers for categories)
-        sections = re.split(r'\n# (.+?)\n', content)
-
-        current_category = "General"
-
-        for i, section in enumerate(sections):
-            if i == 0:
-                continue  # Skip content before first #
-
-            # Odd indices are category names
-            if i % 2 == 1:
-                current_category = section.strip()
+    def iter_faq_files(self):
+        """Yield (path, frontmatter, body) for every FAQ file under source dir."""
+        for md_path in self.source_directory.rglob("*.md"):
+            try:
+                text = md_path.read_text(encoding="utf-8")
+            except (OSError, UnicodeDecodeError) as e:
+                logger.warning(f"Skipping unreadable file {md_path}: {e}")
                 continue
 
-            # Even indices are section content
-            # Split this section by ## (questions)
-            questions = re.split(r'\n## (.+?)\n', section)
+            fm, body = split_frontmatter(text)
+            if not fm or fm.get("layout") != "faq":
+                continue
 
-            for j in range(1, len(questions), 2):
-                if j + 1 < len(questions):
-                    question = questions[j].strip()
-                    answer = questions[j + 1].strip()
+            # The legacy root `faq.md` has `layout: faq` but no `title:` --
+            # it predates the per-file format and isn't a single FAQ.
+            if not fm.get("title"):
+                continue
 
-                    # Clean up answer (remove multiple newlines, etc.)
-                    answer = re.sub(r'\n\n+', '\n\n', answer)
+            rel = md_path.relative_to(self.source_directory)
+            if not self.include_translations and is_translation(rel):
+                continue
 
-                    faqs.append({
-                        'question': question,
-                        'answer': answer,
-                        'category': current_category
-                    })
-
-        logger.info(f"Parsed {len(faqs)} FAQs from file")
-        return faqs
-
-    def create_faq_documents(self, faqs: List[dict]) -> List[Document]:
-        """
-        Convert FAQ dictionaries to LangChain Documents.
-
-        Args:
-            faqs: List of FAQ dictionaries
-
-        Returns:
-            List of Document objects
-        """
-        documents = []
-
-        for i, faq in enumerate(faqs):
-            # Create content with question and answer
-            content = f"Q: {faq['question']}\n\nA: {faq['answer']}"
-
-            # Metadata
-            metadata = {
-                "source": str(self.faq_file),
-                "data_source": "gtn_faq",
-                "content_type": "faq",
-                "category": faq['category'],
-                "question": faq['question'],
-                "faq_index": i
-            }
-
-            doc = Document(page_content=content, metadata=metadata)
-            documents.append(doc)
-
-        return documents
+            yield md_path, rel, fm, body
 
     def load_documents(self) -> List[Document]:
-        """
-        Load and parse FAQ file into documents.
+        documents: List[Document] = []
+        skipped_no_title = 0
+        for md_path, rel, fm, body in self.iter_faq_files():
+            question = str(fm.get("title", "")).strip()
+            if not question:
+                skipped_no_title += 1
+                continue
 
-        Returns:
-            List of Document objects (one per FAQ)
-        """
-        logger.info(f"Loading FAQ file: {self.faq_file}")
+            answer = strip_liquid(body)
+            content = f"Q: {question}\n\nA: {answer}"
 
-        try:
-            with open(self.faq_file, 'r', encoding='utf-8') as f:
-                content = f.read()
+            tier, topic, tutorial = classify_tier(rel)
+            metadata = {
+                "source": str(rel),
+                "data_source": "gtn_faq",
+                "content_type": "faq",
+                "question": question,
+                "area": str(fm.get("area") or ""),
+                "tier": tier,
+                "topic": topic or "",
+                "tutorial": tutorial or "",
+            }
+            if isinstance(fm.get("contributors"), list):
+                metadata["contributors"] = ",".join(str(c) for c in fm["contributors"])
 
-            # Parse into Q&A pairs
-            faqs = self.parse_faq_file(content)
+            documents.append(Document(page_content=content, metadata=metadata))
 
-            # Convert to documents
-            documents = self.create_faq_documents(faqs)
-
-            logger.info(f"Created {len(documents)} FAQ documents")
-            return documents
-
-        except Exception as e:
-            logger.error(f"Error loading FAQ file: {e}")
-            raise
+        logger.info(f"Loaded {len(documents)} FAQ documents")
+        if skipped_no_title:
+            logger.info(f"Skipped {skipped_no_title} files with empty title")
+        return documents
 
     def run(self, force_rebuild: bool = False, test_query: str = None):
-        """
-        Run the complete FAQ pipeline.
-
-        Args:
-            force_rebuild: Force full rebuild ignoring incremental tracking
-            test_query: Optional query to test the vectorstore
-        """
         logger.info("=" * 60)
         logger.info("Starting FAQ Pipeline")
         logger.info("=" * 60)
 
-        # Load documents
         documents = self.load_documents()
-
         if not documents:
             logger.warning("No FAQ documents found!")
             return None
 
-        # IMPORTANT: For FAQs, each Q&A pair should ideally remain as a single chunk.
-        # Since FAQs are typically short (Q + A), they should fit within the
-        # default chunk size (512 tokens). The pipeline will handle them as-is.
-
-        # Run embedding pipeline
         vectorstore = self.pipeline.run(documents, force_rebuild=force_rebuild)
 
         if vectorstore and test_query:
@@ -214,77 +212,68 @@ class FAQPipeline:
             logger.info(f"Found {len(results)} similar FAQs")
             for i, result in enumerate(results, 1):
                 question = result.metadata.get('question', 'Unknown')
-                category = result.metadata.get('category', 'Unknown')
-                logger.info(f"  {i}. [{category}] {question}")
+                tier = result.metadata.get('tier', 'unknown')
+                logger.info(f"  {i}. [{tier}] {question}")
 
         logger.info("=" * 60)
         logger.info("FAQ Pipeline Complete")
         logger.info("=" * 60)
-
         return vectorstore
 
 
-def main():
-    """Main entry point."""
+def _default_source_dir() -> str:
+    """Resolve the FAQ source directory.
 
-    parser = argparse.ArgumentParser(
-        description="Galaxy FAQ Embedding Pipeline"
-    )
+    Priority: FAQ_SOURCE_DIRECTORY -> parent of GTN_SOURCE_DIRECTORY (which
+    points at `.../training-material/topics`) -> a sensible fallback path.
+    """
+    explicit = os.getenv("FAQ_SOURCE_DIRECTORY")
+    if explicit:
+        return explicit
+    gtn = os.getenv("GTN_SOURCE_DIRECTORY")
+    if gtn:
+        # GTN_SOURCE_DIRECTORY points at `.../training-material/topics`; we
+        # want the repo root one level up.
+        return str(Path(gtn.rstrip("/")).parent)
+    return "/Users/dannon/work/training-material"
+
+
+def main():
+    parser = argparse.ArgumentParser(description="Galaxy FAQ Embedding Pipeline")
     parser.add_argument(
-        "--faq-file",
-        default=os.path.join(
-            os.path.dirname(os.getenv("GTN_SOURCE_DIRECTORY", "/Users/dannon/work/training-material/topics").rstrip("/")),
-            "faq.md"
-        ),
-        help="Path to FAQ markdown file"
+        "--source-dir",
+        default=_default_source_dir(),
+        help="Path to the training-material repo (walked recursively for layout:faq files)",
     )
     parser.add_argument(
         "--chroma-dir",
         default=os.getenv("CHROMA_DIRECTORY", "./data/embeddings"),
-        help="Directory to persist Chroma database"
     )
+    parser.add_argument("--collection", default="galaxy_faqs")
+    parser.add_argument("--force-rebuild", action="store_true")
+    parser.add_argument("--no-incremental", action="store_true")
     parser.add_argument(
-        "--collection",
-        default="galaxy_faqs",
-        help="Name of the Chroma collection"
-    )
-    parser.add_argument(
-        "--force-rebuild",
+        "--include-translations",
         action="store_true",
-        help="Force full rebuild, ignoring incremental tracking"
+        help="Include localized galaxy-{de,es,fr,it} FAQ mirrors (default: English only)",
     )
-    parser.add_argument(
-        "--no-incremental",
-        action="store_true",
-        help="Disable incremental updates"
-    )
-    parser.add_argument(
-        "--test-query",
-        type=str,
-        help="Run a test query after building embeddings"
-    )
-
+    parser.add_argument("--test-query", type=str)
     args = parser.parse_args()
 
-    # Validate FAQ file
-    if not os.path.exists(args.faq_file):
-        logger.error(f"FAQ file does not exist: {args.faq_file}")
-        logger.info("Please set GTN_SOURCE_DIRECTORY or use --faq-file")
+    if not os.path.isdir(args.source_dir):
+        logger.error(f"FAQ source directory does not exist: {args.source_dir}")
+        logger.info("Set FAQ_SOURCE_DIRECTORY or GTN_SOURCE_DIRECTORY, or pass --source-dir")
         return
 
     try:
         pipeline = FAQPipeline(
-            faq_file=args.faq_file,
+            source_directory=args.source_dir,
             chroma_directory=args.chroma_dir,
             collection_name=args.collection,
-            incremental=not args.no_incremental
+            incremental=not args.no_incremental,
+            include_translations=args.include_translations,
         )
-
-        pipeline.run(
-            force_rebuild=args.force_rebuild,
-            test_query=args.test_query
-        )
-
+        pipeline.run(force_rebuild=args.force_rebuild, test_query=args.test_query)
     except Exception as e:
         logger.error(f"FAQ Pipeline failed: {e}")
         raise

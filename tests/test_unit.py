@@ -9,6 +9,8 @@ import pytest
 from langchain.schema import Document
 
 from pipelines.common import EmbeddingPipeline, strip_yaml_frontmatter
+from pipelines.faq import classify_tier, is_translation, split_frontmatter, strip_liquid
+from pathlib import Path
 from retrieval.collections import COLLECTIONS, collection_by_chroma_name
 from retrieval.manifest import Manifest, ManifestMismatch, validate as validate_manifest
 from scripts.write_manifest import count_documents
@@ -189,3 +191,58 @@ class TestCountDocuments:
     def test_handles_none_entries(self):
         # chromadb sometimes returns None metadata for chunks; don't crash.
         assert count_documents([None, {"source": "/a.md"}, None]) == 1
+
+
+class TestFAQFrontmatter:
+    def test_parses_layout_and_title(self):
+        text = "---\nlayout: faq\ntitle: How do I X?\narea: analysis\n---\nbody here\n"
+        fm, body = split_frontmatter(text)
+        assert fm == {"layout": "faq", "title": "How do I X?", "area": "analysis"}
+        assert body == "body here\n"
+
+    def test_returns_none_without_frontmatter(self):
+        fm, body = split_frontmatter("just markdown\n# heading\n")
+        assert fm is None
+        assert body == "just markdown\n# heading\n"
+
+    def test_returns_none_on_malformed_yaml(self):
+        # `:` without space inside an unquoted scalar -> yaml error, treat as no frontmatter
+        text = "---\nfoo: :: : bad: indent\n  - [\n---\nbody"
+        fm, _ = split_frontmatter(text)
+        assert fm is None
+
+
+class TestStripLiquid:
+    def test_removes_tag_and_variable(self):
+        text = "Use the {% icon tool %} **Concatenate** tool. See {{ page.url }} for details."
+        assert strip_liquid(text) == "Use the  **Concatenate** tool. See  for details."
+
+    def test_handles_block_tags(self):
+        text = "Before {% if include.toolspec %}middle{% endif %} after"
+        # Both opening and closing tags drop, plus the inner literal stays.
+        assert "middle" in strip_liquid(text)
+        assert "{%" not in strip_liquid(text)
+
+
+class TestClassifyTier:
+    def test_galaxy_faq(self):
+        assert classify_tier(Path("faqs/galaxy/account_create.md")) == ("galaxy", None, None)
+
+    def test_gtn_faq(self):
+        assert classify_tier(Path("faqs/gtn/contributors_getting_started.md")) == ("gtn", None, None)
+
+    def test_topic_faq(self):
+        assert classify_tier(Path("topics/admin/faqs/ansible-connection.md")) == ("topic", "admin", None)
+
+    def test_tutorial_faq(self):
+        rel = Path("topics/admin/tutorials/ansible/faqs/foo.md")
+        assert classify_tier(rel) == ("tutorial", "admin", "ansible")
+
+    def test_translation_recognized_as_galaxy_tier(self):
+        # Localized mirrors are still galaxy-tier; the language is the filter.
+        assert classify_tier(Path("faqs/galaxy-de/account_create.md")) == ("galaxy", None, None)
+
+    def test_is_translation(self):
+        assert is_translation(Path("faqs/galaxy-de/foo.md"))
+        assert not is_translation(Path("faqs/galaxy/foo.md"))
+        assert not is_translation(Path("topics/admin/faqs/foo.md"))
