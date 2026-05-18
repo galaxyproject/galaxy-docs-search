@@ -69,6 +69,11 @@ iwc:
 	@echo "⚙️  Running IWC workflows pipeline..."
 	uv run python -m pipelines.iwc
 
+# Galaxy tools pipeline
+tools:
+	@echo "🧰 Running Galaxy tools pipeline..."
+	uv run python -m pipelines.tools
+
 # Run all pipelines
 update-all:
 	@echo "🌐 Running all pipelines..."

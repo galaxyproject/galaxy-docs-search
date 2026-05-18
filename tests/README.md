@@ -1,8 +1,20 @@
-# Galaxy Documentation Search Tests
+# Galaxy Documentation Tests
 
-Comprehensive test suite for validating search quality across all Galaxy documentation collections.
+Comprehensive test suite for validating Galaxy documentation search quality and tools pipeline behavior.
 
 ## Test Files
+
+### `test_tools_pipeline.py`
+Tests the Galaxy tools help-text embedding pipeline in `pipelines/tools.py`:
+- HTML help text extraction and whitespace normalization
+- `GalaxyTool` metadata structure
+- `<help>` block extraction from Galaxy tool XML
+- Markdown-to-text conversion
+- Recursive traversal of Galaxy tool panel payloads
+- Tool extraction, deduplication, sorting, and limit handling
+- `GalaxyToolsPipeline` initialization, JSON loading, and Document creation
+- HTTP JSON fetching and JSON file loading
+- Edge cases for empty IDs, special characters, and mixed content
 
 ### `test_search_quality.py`
 Tests fundamental search functionality and metadata correctness:
@@ -28,7 +40,11 @@ Real-world search scenarios and use cases:
 
 ## Prerequisites
 
-1. **Embeddings must be built first**:
+`test_tools_pipeline.py` can run without built embeddings or a live Galaxy API because file and network behavior is mocked.
+
+Search quality and scenario tests require:
+
+1. **Embeddings built first**:
 ```bash
 # Run all pipelines to create embeddings
 make update-all
@@ -45,6 +61,11 @@ EMBEDDINGS_API_KEY=local-model
 EMBEDDINGS_BASE_URL=http://127.0.0.1:1234/v1
 ```
 
+4. **Development dependencies installed**:
+```bash
+uv sync --all-extras
+```
+
 ## Running Tests
 
 ### Run all tests
@@ -54,12 +75,14 @@ pytest tests/ -v
 
 ### Run specific test file
 ```bash
+pytest tests/test_tools_pipeline.py -v
 pytest tests/test_search_quality.py -v
 pytest tests/test_search_scenarios.py -v
 ```
 
 ### Run specific test class
 ```bash
+pytest tests/test_tools_pipeline.py::TestHTMLTextExtractor -v
 pytest tests/test_search_quality.py::TestIWCCollection -v
 pytest tests/test_search_scenarios.py::TestBioinformaticsWorkflows -v
 ```
@@ -87,9 +110,26 @@ pytest tests/ -k "metadata" -v
 pytest tests/test_search_scenarios.py::test_print_example_results -v -s
 ```
 
+### Run tools pipeline coverage
+```bash
+pytest tests/test_tools_pipeline.py --cov=pipelines.tools
+```
+
 ## Test Organization
 
 ### By Collection
+
+**Tools Pipeline Tests**:
+- `TestHTMLTextExtractor` - HTML parsing and plain-text extraction
+- `TestGalaxyTool` - Galaxy tool metadata dataclass behavior
+- `TestExtractHelpBlock` - XML `<help>` extraction
+- `TestMarkdownToText` - Markdown conversion
+- `TestIterToolObjects` - Recursive tool panel traversal
+- `TestExtractTools` - Tool extraction and deduplication
+- `TestGalaxyToolsPipeline` - Pipeline initialization, payload loading, and Document conversion
+- `TestFetchJson` - HTTP JSON fetching
+- `TestLoadJsonFile` - JSON file loading
+- `TestEdgeCases` - Boundary conditions and special input handling
 
 **FAQ Tests**:
 - `TestFAQCollection` - FAQ-specific search quality
@@ -142,12 +182,15 @@ def test_analysis_type_search(self, iwc_store, query, expected_topic):
 ### Fixtures
 Tests use shared fixtures for efficiency:
 - `embeddings` - Shared embeddings instance
-- `faq_store`, `iwc_store`, `gtn_store`, `discourse_store` - Collection stores
+- `faq_store`, `iwc_store`, `gtn_store`, `discourse_store`, `galaxy_tools` - Collection stores
 - `all_stores` - Dictionary of all stores
+
+`test_tools_pipeline.py` also uses `tmp_path`, `monkeypatch`, and `unittest.mock` to test file loading and network behavior without requiring live Galaxy API calls.
 
 ## Expected Test Results
 
 With properly built embeddings, you should see:
+- ✅ Tools pipeline helpers parse, normalize, deduplicate, and convert tools into Documents correctly
 - ✅ All collections load successfully
 - ✅ Metadata is complete and correctly typed
 - ✅ Searches return relevant results
