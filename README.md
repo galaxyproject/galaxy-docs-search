@@ -73,6 +73,7 @@ make discourse-all   # Discourse forum posts
 make gtn            # GTN tutorials
 make faq            # Galaxy FAQs
 make iwc            # IWC workflows
+make tools          # Galaxy tool help text
 
 # Run all pipelines
 make update-all
@@ -256,6 +257,54 @@ Document(
         "license": "MIT",
         "doi": "10.5281/zenodo.12345",
         "url": "https://iwc.galaxyproject.org/workflows/..."
+    }
+)
+```
+
+### 5. Galaxy Tools Pipeline
+
+**Purpose**: Fetches Galaxy tool metadata and embeds each tool wrapper's help text.
+
+**Source**: https://usegalaxy.org/api/tools and each tool's `raw_tool_source` API endpoint.
+
+**Output**:
+- One document per Galaxy tool
+- Collection: `galaxy_tools`
+- Inspection artifacts: `data/tools_only.json`, `data/tools_metadata.tsv`, `data/tools_helptext.tsv`
+
+**Features**:
+- Recursively walks the Galaxy tool panel and keeps section metadata
+- Extracts `<help>...</help>` from raw Galaxy tool wrappers
+- Converts Galaxy wrapper help Markdown/reStructuredText-like text to plain text for embeddings
+- Incremental updates through the shared embedding tracker
+
+**Usage**:
+```bash
+# Run Galaxy tools pipeline
+make tools
+
+# Process only the first N tools while testing
+uv run python -m pipelines.tools --tool-limit 25
+
+# With test query
+uv run python -m pipelines.tools --test-query "How do I run fastqc?"
+
+# Force rebuild
+uv run python -m pipelines.tools --force-rebuild
+```
+
+**Document Structure**:
+```python
+Document(
+    page_content="# FastQC\nTool ID: ...\nDescription: ...\n\n## Help\n...",
+    metadata={
+        "source": "galaxy-tool://toolshed.g2.bx.psu.edu/repos/...",
+        "data_source": "usegalaxy_tools",
+        "content_type": "tool_help",
+        "tool_id": "toolshed.g2.bx.psu.edu/repos/...",
+        "name": "FastQC",
+        "panel_section_name": "FASTA/FASTQ",
+        "url": "https://usegalaxy.org/root?tool_id=..."
     }
 )
 ```
