@@ -282,6 +282,17 @@ Document(
 - Stores the structured JSON summary in document metadata as `workflow_summary`
 
 **Usage**:
+
+Make sure you have set the following parameters in the `.env` file
+
+CHAT_API_KEY=local-model
+CHAT_BASE_URL=http://127.0.0.1:1234/v1
+CHAT_MODEL=gpt-oss-120b
+
+The API_KEY and BASE_URL should be OpenAI API compatible.
+
+Then run:
+
 ```bash
 # Run IWC workflow summaries pipeline
 make iwc-summaries
