@@ -254,7 +254,9 @@ class TestIWCGistDocuments:
 
         assert record["workflow_id"] == "rna-seq-main"
         assert record["name"] == "RNA-seq workflow"
-        assert record["source"] == "iwc://./workflows/transcriptomics/rna-seq#rna-seq-main"
+        assert (
+            record["source"] == "iwc://./workflows/transcriptomics/rna-seq#rna-seq-main"
+        )
         assert record["source_file"] == "./workflows/transcriptomics/rna-seq"
         assert record["topic"] == "transcriptomics"
         assert record["tags"] == ["RNA-seq", "Transcriptomics"]

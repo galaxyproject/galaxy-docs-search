@@ -119,12 +119,14 @@ class IWCPipeline:
             chroma_directory=str(self.chroma_directory),
             collection_name=collection_name,
             tracking_file=str(tracking_file),
-            incremental=incremental
+            incremental=incremental,
         )
 
         logger.info("IWC Pipeline initialized")
         logger.info(f"Manifest URL: {manifest_url}")
-        logger.info(f"Workflow summaries: {'enabled' if summarize_workflows else 'disabled'}")
+        logger.info(
+            f"Workflow summaries: {'enabled' if summarize_workflows else 'disabled'}"
+        )
         logger.info(f"Summaries file: {self.summaries_file}")
 
     def fetch_manifest(self) -> Dict:
@@ -148,11 +150,7 @@ class IWCPipeline:
             logger.error(f"Failed to fetch manifest: {e}")
             raise
 
-    def parse_workflow_to_document(
-        self,
-        workflow: Dict,
-        path: str
-    ) -> Document:
+    def parse_workflow_to_document(self, workflow: Dict, path: str) -> Document:
         """
         Convert workflow metadata to LangChain Document.
 
@@ -163,14 +161,16 @@ class IWCPipeline:
         Returns:
             LangChain Document with workflow documentation
         """
-        definition = workflow.get('definition', {})
+        definition = workflow.get("definition", {})
 
         # Extract metadata
-        workflow_name = definition.get('name', workflow.get('name', 'Unnamed'))
-        workflow_id = workflow.get('iwcID', '')
-        annotation = definition.get('annotation', '')
-        readme = workflow.get('readme', '')
-        workflow_summary = self.summarize_workflow(workflow, path) if self.summarize_workflows else {}
+        workflow_name = definition.get("name", workflow.get("name", "Unnamed"))
+        workflow_id = workflow.get("iwcID", "")
+        annotation = definition.get("annotation", "")
+        readme = workflow.get("readme", "")
+        workflow_summary = (
+            self.summarize_workflow(workflow, path) if self.summarize_workflows else {}
+        )
 
         # Build content from structured summary, README, and annotation.
         content_parts = []
@@ -193,13 +193,13 @@ class IWCPipeline:
         page_content = "\n".join(content_parts)
 
         # Build metadata
-        authors = workflow.get('authors', [])
-        author_names = [a.get('name', '') for a in authors if a.get('name')]
-        author_orcids = [a.get('orcid', '') for a in authors if a.get('orcid')]
+        authors = workflow.get("authors", [])
+        author_names = [a.get("name", "") for a in authors if a.get("name")]
+        author_orcids = [a.get("orcid", "") for a in authors if a.get("orcid")]
 
         # Extract topic from path (e.g., "computational-chemistry")
-        path_parts = path.strip('./').split('/')
-        topic = path_parts[1] if len(path_parts) > 1 else 'unknown'
+        path_parts = path.strip("./").split("/")
+        topic = path_parts[1] if len(path_parts) > 1 else "unknown"
         workflow_source = f"iwc://{path}#{workflow_id or workflow_name}"
 
         metadata = {
@@ -210,17 +210,21 @@ class IWCPipeline:
             "workflow_id": workflow_id,
             "topic": topic,
             "path": path,
-            "categories": ", ".join(workflow.get('categories', [])),
-            "collections": ", ".join(workflow.get('collections', [])),
+            "categories": ", ".join(workflow.get("categories", [])),
+            "collections": ", ".join(workflow.get("collections", [])),
             "authors": ", ".join(author_names),
             "orcids": ", ".join(author_orcids),
-            "license": definition.get('license', ''),
-            "release": definition.get('release', ''),
-            "doi": workflow.get('doi', ''),
-            "updated": workflow.get('updated', ''),
+            "license": definition.get("license", ""),
+            "release": definition.get("release", ""),
+            "doi": workflow.get("doi", ""),
+            "updated": workflow.get("updated", ""),
             "summary_model": self.summary_model if workflow_summary else "",
-            "workflow_summary": json.dumps(workflow_summary, ensure_ascii=False) if workflow_summary else "",
-            "url": f"https://iwc.galaxyproject.org/workflow/{workflow_id}"
+            "workflow_summary": (
+                json.dumps(workflow_summary, ensure_ascii=False)
+                if workflow_summary
+                else ""
+            ),
+            "url": f"https://iwc.galaxyproject.org/workflow/{workflow_id}",
         }
 
         return Document(page_content=page_content, metadata=metadata)
@@ -239,16 +243,24 @@ class IWCPipeline:
                 return self.summarize_workflow_with_llm(workflow_context)
             except Exception as exc:
                 workflow_name = workflow_context.get("workflow_name", "unknown")
-                logger.warning("LLM summary failed for %s; using local summary: %s", workflow_name, exc)
+                logger.warning(
+                    "LLM summary failed for %s; using local summary: %s",
+                    workflow_name,
+                    exc,
+                )
 
         return self.summarize_workflow_locally(workflow_context)
 
-    def summarize_workflow_with_llm(self, workflow_context: Dict[str, Any]) -> Dict[str, Any]:
+    def summarize_workflow_with_llm(
+        self, workflow_context: Dict[str, Any]
+    ) -> Dict[str, Any]:
         """Create a structured workflow summary with an OpenAI-compatible chat model."""
         try:
             from openai import OpenAI
         except ImportError as exc:
-            raise RuntimeError("openai package is required for LLM workflow summaries") from exc
+            raise RuntimeError(
+                "openai package is required for LLM workflow summaries"
+            ) from exc
 
         client = OpenAI(api_key=self.summary_api_key, base_url=self.summary_base_url)
         response = client.chat.completions.create(
@@ -269,23 +281,31 @@ class IWCPipeline:
             raise RuntimeError("summary response was not a JSON object")
         return self.normalize_summary(summary, workflow_context)
 
-    def summarize_workflow_locally(self, workflow_context: Dict[str, Any]) -> Dict[str, Any]:
+    def summarize_workflow_locally(
+        self, workflow_context: Dict[str, Any]
+    ) -> Dict[str, Any]:
         """Create a deterministic summary using only fields present in the workflow JSON."""
         steps = []
         definition = workflow_context.get("definition", {})
-        ordered_step_context = definition.get("steps", []) if isinstance(definition, dict) else []
+        ordered_step_context = (
+            definition.get("steps", []) if isinstance(definition, dict) else []
+        )
         for step in ordered_step_context:
-            steps.append({
-                "step_id": step.get("step_id"),
-                "tool_name": step.get("tool_name") or "unknown",
-                "step_purpose": step.get("step_purpose") or "unknown",
-                "input_datatypes": step.get("input_datatypes") or [],
-                "output_datatypes": step.get("output_datatypes") or [],
-            })
+            steps.append(
+                {
+                    "step_id": step.get("step_id"),
+                    "tool_name": step.get("tool_name") or "unknown",
+                    "step_purpose": step.get("step_purpose") or "unknown",
+                    "input_datatypes": step.get("input_datatypes") or [],
+                    "output_datatypes": step.get("output_datatypes") or [],
+                }
+            )
 
         summary = {
             "workflow_name": workflow_context.get("workflow_name") or "unknown",
-            "workflow_purpose": workflow_context.get("annotation") or workflow_context.get("readme_excerpt") or "unknown",
+            "workflow_purpose": workflow_context.get("annotation")
+            or workflow_context.get("readme_excerpt")
+            or "unknown",
             "scientific_domain": workflow_context.get("topic") or "unknown",
             "main_analysis_task": workflow_context.get("workflow_name") or "unknown",
             "ordered_steps": steps,
@@ -297,7 +317,9 @@ class IWCPipeline:
         }
         return self.normalize_summary(summary, workflow_context)
 
-    def workflow_summary_context(self, workflow: Dict[str, Any], path: str) -> Dict[str, Any]:
+    def workflow_summary_context(
+        self, workflow: Dict[str, Any], path: str
+    ) -> Dict[str, Any]:
         """Build the bounded workflow JSON context passed to the summarizer."""
         definition = workflow.get("definition", {})
         workflow_name = definition.get("name", workflow.get("name", "Unnamed"))
@@ -335,14 +357,22 @@ class IWCPipeline:
 
         ordered_steps = []
         for _, step_id, step in sorted(step_items, key=lambda item: item[0]):
-            tool_name = step.get("name") or step.get("tool_id") or step.get("tool_version")
-            ordered_steps.append({
-                "step_id": str(step.get("id", step_id)),
-                "tool_name": tool_name,
-                "step_purpose": step.get("annotation") or step.get("label") or "",
-                "input_datatypes": self.extract_step_datatypes(step.get("input_connections")),
-                "output_datatypes": self.extract_step_datatypes(step.get("outputs")),
-            })
+            tool_name = (
+                step.get("name") or step.get("tool_id") or step.get("tool_version")
+            )
+            ordered_steps.append(
+                {
+                    "step_id": str(step.get("id", step_id)),
+                    "tool_name": tool_name,
+                    "step_purpose": step.get("annotation") or step.get("label") or "",
+                    "input_datatypes": self.extract_step_datatypes(
+                        step.get("input_connections")
+                    ),
+                    "output_datatypes": self.extract_step_datatypes(
+                        step.get("outputs")
+                    ),
+                }
+            )
         return ordered_steps
 
     @staticmethod
@@ -372,15 +402,33 @@ class IWCPipeline:
         visit(value)
         return sorted(datatypes)
 
-    def normalize_summary(self, summary: Dict[str, Any], workflow_context: Dict[str, Any]) -> Dict[str, Any]:
+    def normalize_summary(
+        self, summary: Dict[str, Any], workflow_context: Dict[str, Any]
+    ) -> Dict[str, Any]:
         """Ensure summaries have the expected RAG schema."""
         normalized = {
-            "workflow_name": summary.get("workflow_name") or workflow_context.get("workflow_name") or "unknown",
-            "workflow_purpose": summary.get("workflow_purpose") or workflow_context.get("annotation") or "unknown",
-            "scientific_domain": summary.get("scientific_domain") or workflow_context.get("topic") or "unknown",
-            "main_analysis_task": summary.get("main_analysis_task") or workflow_context.get("workflow_name") or "unknown",
-            "ordered_steps": summary.get("ordered_steps") if isinstance(summary.get("ordered_steps"), list) else [],
-            "summary": summary.get("summary") if isinstance(summary.get("summary"), dict) else {},
+            "workflow_name": summary.get("workflow_name")
+            or workflow_context.get("workflow_name")
+            or "unknown",
+            "workflow_purpose": summary.get("workflow_purpose")
+            or workflow_context.get("annotation")
+            or "unknown",
+            "scientific_domain": summary.get("scientific_domain")
+            or workflow_context.get("topic")
+            or "unknown",
+            "main_analysis_task": summary.get("main_analysis_task")
+            or workflow_context.get("workflow_name")
+            or "unknown",
+            "ordered_steps": (
+                summary.get("ordered_steps")
+                if isinstance(summary.get("ordered_steps"), list)
+                else []
+            ),
+            "summary": (
+                summary.get("summary")
+                if isinstance(summary.get("summary"), dict)
+                else {}
+            ),
         }
         return normalized
 
@@ -424,7 +472,11 @@ class IWCPipeline:
         fields = [
             f"step_id={step.get('step_id')}" if step.get("step_id") is not None else "",
             f"tool_name={step.get('tool_name')}" if step.get("tool_name") else "",
-            f"step_purpose={step.get('step_purpose')}" if step.get("step_purpose") else "",
+            (
+                f"step_purpose={step.get('step_purpose')}"
+                if step.get("step_purpose")
+                else ""
+            ),
             self.format_key_value("input_datatypes", step.get("input_datatypes")),
             self.format_key_value("output_datatypes", step.get("output_datatypes")),
         ]
@@ -437,7 +489,11 @@ class IWCPipeline:
         if isinstance(value, list):
             return f"{key}: {', '.join(str(item) for item in value)}" if value else ""
         if isinstance(value, dict):
-            return f"{key}: {json.dumps(value, ensure_ascii=False, sort_keys=True)}" if value else ""
+            return (
+                f"{key}: {json.dumps(value, ensure_ascii=False, sort_keys=True)}"
+                if value
+                else ""
+            )
         text = str(value).strip()
         return f"{key}: {text}" if text else ""
 
@@ -450,7 +506,10 @@ class IWCPipeline:
         try:
             summary = json.loads(raw_summary)
         except json.JSONDecodeError:
-            logger.warning("Skipping invalid workflow summary metadata for %s", doc.metadata.get("source"))
+            logger.warning(
+                "Skipping invalid workflow summary metadata for %s",
+                doc.metadata.get("source"),
+            )
             return None
 
         categories = doc.metadata.get("categories", "")
@@ -487,7 +546,9 @@ class IWCPipeline:
             json.dumps(records, ensure_ascii=False, indent=2),
             encoding="utf-8",
         )
-        logger.info("Wrote %s workflow summaries to %s", len(records), self.summaries_file)
+        logger.info(
+            "Wrote %s workflow summaries to %s", len(records), self.summaries_file
+        )
 
     def load_documents(self) -> List[Document]:
         """
@@ -500,8 +561,8 @@ class IWCPipeline:
 
         documents = []
         for j, entry in enumerate(tqdm(manifest, desc="IWC manifest entries")):
-            path = entry.get('path', '')
-            workflows = entry.get('workflows', [])
+            path = entry.get("path", "")
+            workflows = entry.get("workflows", [])
 
             for i, workflow in enumerate(
                 tqdm(
@@ -513,7 +574,9 @@ class IWCPipeline:
                 try:
                     doc = self.parse_workflow_to_document(workflow, path)
                     documents.append(doc)
-                    logger.info(f"Parsed workflow {i / len(workflows) * 100:.1f}%: {doc.metadata['workflow_name']}' from {path}")
+                    logger.info(
+                        f"Parsed workflow {i / len(workflows) * 100:.1f}%: {doc.metadata['workflow_name']}' from {path}"
+                    )
                 except Exception as e:
                     logger.error(f"Error parsing workflow at {path}: {e}")
                     continue
@@ -551,7 +614,7 @@ class IWCPipeline:
             results = vectorstore.similarity_search(test_query, k=1)
             logger.info(f"Found {len(results)} similar documents")
             for i, result in enumerate(results, 1):
-                source = result.metadata.get('source', 'Unknown')
+                source = result.metadata.get("source", "Unknown")
                 logger.info(f"  {i}. {source}")
                 logger.info(f"     URL: {result.metadata['url']}")
                 logger.info(f"     Workflow name: {result.metadata['workflow_name']}")
@@ -567,49 +630,41 @@ class IWCPipeline:
 
 def main():
     """Main entry point for IWC pipeline."""
-    parser = argparse.ArgumentParser(
-        description="IWC Workflow embedding pipeline"
-    )
+    parser = argparse.ArgumentParser(description="IWC Workflow embedding pipeline")
     parser.add_argument(
         "--manifest-url",
         default="https://iwc.galaxyproject.org/workflow_manifest.json",
-        help="URL to workflow manifest JSON"
+        help="URL to workflow manifest JSON",
     )
     parser.add_argument(
         "--chroma-directory",
         default=os.getenv("CHROMA_DIRECTORY", "./data/embeddings"),
-        help="Path to Chroma database directory"
+        help="Path to Chroma database directory",
     )
     parser.add_argument(
         "--force-rebuild",
         action="store_true",
-        help="Force rebuild of all embeddings (ignore incremental updates)"
+        help="Force rebuild of all embeddings (ignore incremental updates)",
     )
-    parser.add_argument(
-        "--test-query",
-        help="Test query after building embeddings"
-    )
+    parser.add_argument("--test-query", help="Test query after building embeddings")
     parser.add_argument(
         "--no-summarize-workflows",
         action="store_true",
-        help="Embed raw workflow metadata only; skip structured workflow summaries"
+        help="Embed raw workflow metadata only; skip structured workflow summaries",
     )
     parser.add_argument(
         "--summary-model",
-        help="Chat model used to summarize workflows before embedding"
+        help="Chat model used to summarize workflows before embedding",
     )
     parser.add_argument(
         "--summary-base-url",
-        help="OpenAI-compatible chat API base URL used for workflow summaries"
+        help="OpenAI-compatible chat API base URL used for workflow summaries",
     )
-    parser.add_argument(
-        "--summary-api-key",
-        help="API key used for workflow summaries"
-    )
+    parser.add_argument("--summary-api-key", help="API key used for workflow summaries")
     parser.add_argument(
         "--summaries-file",
         default=DEFAULT_SUMMARIES_FILE,
-        help="JSON file where generated workflow text summaries are written"
+        help="JSON file where generated workflow text summaries are written",
     )
 
     args = parser.parse_args()
@@ -617,7 +672,7 @@ def main():
     # Setup logging
     logging.basicConfig(
         level=logging.INFO,
-        format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+        format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
     )
 
     # Run pipeline
@@ -631,7 +686,10 @@ def main():
         summaries_file=args.summaries_file,
     )
 
-    vectorstore = pipeline.run(force_rebuild=args.force_rebuild, test_query=args.test_query)
+    vectorstore = pipeline.run(
+        force_rebuild=args.force_rebuild, test_query=args.test_query
+    )
+
 
 if __name__ == "__main__":
     main()
