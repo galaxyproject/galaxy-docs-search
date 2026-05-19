@@ -155,7 +155,7 @@ class IWCPipeline:
             "release": definition.get('release', ''),
             "doi": workflow.get('doi', ''),
             "updated": workflow.get('updated', ''),
-            "url": f"https://iwc.galaxyproject.org/workflows/{workflow.get('iwcID', '')}"
+            "url": f"https://iwc.galaxyproject.org/workflow/{workflow.get('iwcID', '')}"
         }
 
         return Document(page_content=page_content, metadata=metadata)
