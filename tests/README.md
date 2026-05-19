@@ -16,6 +16,17 @@ Tests the Galaxy tools help-text embedding pipeline in `pipelines/tools.py`:
 - HTTP JSON fetching and JSON file loading
 - Edge cases for empty IDs, special characters, and mixed content
 
+### `test_iwc_gist_pipeline.py`
+Tests the IWC workflow summaries pipeline in `pipelines/iwc_gist.py`:
+- Default `iwc_workflows_gist` collection initialization
+- Summary model and output file configuration
+- Ordered workflow step extraction and datatype discovery
+- Local workflow summary fallback behavior
+- Summary text formatting for embeddings
+- Document content and metadata generation
+- `data/iwc_workflow_summaries.json` record persistence
+- Embedding pipeline handoff without live Chroma or API calls
+
 ### `test_search_quality.py`
 Tests fundamental search functionality and metadata correctness:
 - Collection loading and metadata structure
@@ -40,7 +51,7 @@ Real-world search scenarios and use cases:
 
 ## Prerequisites
 
-`test_tools_pipeline.py` can run without built embeddings or a live Galaxy API because file and network behavior is mocked.
+`test_tools_pipeline.py` and `test_iwc_gist_pipeline.py` can run without built embeddings or a live Galaxy API because file, network, and embedding behavior is mocked.
 
 Search quality and scenario tests require:
 
@@ -76,6 +87,7 @@ pytest tests/ -v
 ### Run specific test file
 ```bash
 pytest tests/test_tools_pipeline.py -v
+pytest tests/test_iwc_gist_pipeline.py -v
 pytest tests/test_search_quality.py -v
 pytest tests/test_search_scenarios.py -v
 ```
@@ -83,6 +95,7 @@ pytest tests/test_search_scenarios.py -v
 ### Run specific test class
 ```bash
 pytest tests/test_tools_pipeline.py::TestHTMLTextExtractor -v
+pytest tests/test_iwc_gist_pipeline.py::TestIWCGistDocuments -v
 pytest tests/test_search_quality.py::TestIWCCollection -v
 pytest tests/test_search_scenarios.py::TestBioinformaticsWorkflows -v
 ```
@@ -130,6 +143,12 @@ pytest tests/test_tools_pipeline.py --cov=pipelines.tools
 - `TestFetchJson` - HTTP JSON fetching
 - `TestLoadJsonFile` - JSON file loading
 - `TestEdgeCases` - Boundary conditions and special input handling
+
+**IWC Workflow Summaries Pipeline Tests**:
+- `TestIWCGistPipelineInitialization` - collection defaults and summary configuration
+- `TestIWCGistSummaryHelpers` - ordered steps, datatype extraction, and summary text
+- `TestIWCGistDocuments` - document metadata and summary JSON record generation
+- `TestIWCGistRun` - handoff to the embedding pipeline
 
 **FAQ Tests**:
 - `TestFAQCollection` - FAQ-specific search quality
@@ -185,12 +204,13 @@ Tests use shared fixtures for efficiency:
 - `faq_store`, `iwc_store`, `gtn_store`, `discourse_store`, `galaxy_tools` - Collection stores
 - `all_stores` - Dictionary of all stores
 
-`test_tools_pipeline.py` also uses `tmp_path`, `monkeypatch`, and `unittest.mock` to test file loading and network behavior without requiring live Galaxy API calls.
+`test_tools_pipeline.py` and `test_iwc_gist_pipeline.py` also use `tmp_path`, `monkeypatch`, and `unittest.mock`-style stubs to test file loading, network behavior, and embedding handoff without requiring live Galaxy API calls.
 
 ## Expected Test Results
 
 With properly built embeddings, you should see:
 - ✅ Tools pipeline helpers parse, normalize, deduplicate, and convert tools into Documents correctly
+- ✅ IWC workflow summary helpers produce collection metadata, summary text, and JSON records correctly
 - ✅ All collections load successfully
 - ✅ Metadata is complete and correctly typed
 - ✅ Searches return relevant results

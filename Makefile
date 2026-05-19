@@ -1,4 +1,4 @@
-.PHONY: help fetch convert embed all clean status manifest
+.PHONY: help fetch convert embed all clean status manifest discourse-fetch discourse-convert discourse-embed discourse-all gtn faq iwc iwc-summaries tools update-all
 
 help:
 	@echo "Galaxy Documentation Embedding Pipeline"
@@ -24,10 +24,14 @@ help:
 	@echo "  make faq        - Run FAQ pipeline"
 	@echo ""
 	@echo "IWC Workflows Pipeline:"
-	@echo "  make iwc        - Run IWC workflows pipeline"
+	@echo "  make iwc           - Run IWC workflows pipeline"
+	@echo "  make iwc-summaries - Run IWC workflow summaries pipeline"
+	@echo ""
+	@echo "Galaxy Tools Pipeline:"
+	@echo "  make tools      - Run Galaxy tools pipeline"
 	@echo ""
 	@echo "All Pipelines:"
-	@echo "  make update-all - Run all pipelines (Discourse, GTN, FAQ, IWC) + write manifest"
+	@echo "  make update-all - Run update pipelines (Discourse, GTN, FAQ, IWC, IWC summaries) + write manifest"
 	@echo "  make manifest   - Write data/embeddings/manifest.json describing the snapshot"
 
 # Discourse pipeline targets
@@ -69,6 +73,11 @@ iwc:
 	@echo "⚙️  Running IWC workflows pipeline..."
 	uv run python -m pipelines.iwc
 
+# IWC workflow summaries pipeline
+iwc-summaries:
+	@echo "🧾 Running IWC workflow summaries pipeline..."
+	uv run python -m pipelines.iwc_gist
+
 # Galaxy tools pipeline
 tools:
 	@echo "🧰 Running Galaxy tools pipeline..."
@@ -88,6 +97,9 @@ update-all:
 	@echo ""
 	@echo "Running IWC workflows pipeline..."
 	$(MAKE) iwc
+	@echo ""
+	@echo "Running IWC workflow summaries pipeline..."
+	$(MAKE) iwc-summaries
 	@echo ""
 	@echo "Writing manifest..."
 	$(MAKE) manifest

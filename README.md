@@ -4,29 +4,26 @@ A complete RAG (Retrieval-Augmented Generation) system for the Galaxy Project th
 
 ## Overview
 
-The system consists of four independent pipelines that populate separate Chroma vector store collections:
+The system consists of six independent pipelines that populate separate Chroma vector store collections:
 
 ```
 ┌──────────────────────────────────────────────────────────────────────────────┐
 │                        CHATGXY MATERIALS PIPELINE                            │
 ├──────────────────────────────────────────────────────────────────────────────┤
 │                                                                              │
-│  DISCOURSE     GTN          FAQ          IWC WORKFLOWS                       │
-│  ┌─────────┐  ┌────────┐   ┌────────┐   ┌─────────────┐                    │
-│  │ 5,986   │  │  168   │   │   25   │   │     105     │                    │
-│  │ topics  │  │tutorial│   │  FAQs  │   │  workflows  │                    │
-│  │ 70,516  │  │ 9,295  │   │   62   │   │  772 chunks │                    │
-│  │ chunks  │  │ chunks │   │ chunks │   └─────────────┘                    │
-│  └─────────┘  └────────┘   └────────┘          ↓                            │
-│       ↓            ↓            ↓         iwc_workflows                      │
-│  discourse_    gtn_        galaxy_faqs    collection                         │
-│  posts         tutorials   collection                                        │
-│  collection    collection                                                    │
+│ DISCOURSE    GTN       FAQ       IWC       IWC SUMMARIES       TOOLS         │
+│ ┌────────┐ ┌──────┐ ┌──────┐ ┌────────┐ ┌───────────────┐ ┌──────────────┐   │
+│ │ forum  │ │tutor │ │ FAQs │ │workflow│ │ workflow step │ │ Galaxy tool  │   │
+│ │ posts  │ │ials  │ │      │ │ docs   │ │ summaries     │ │ help text    │   │
+│ └────────┘ └──────┘ └──────┘ └────────┘ └───────────────┘ └──────────────┘   │
+│     ↓         ↓        ↓        ↓              ↓                  ↓          │
+│ discourse_  gtn_   galaxy_  iwc_workflows  iwc_workflows_   galaxy_tools     │
+│ posts       tutorials faqs                 gist                              │
 │                                                                              │
 │                       CHROMA VECTOR STORE                                    │
 │                     (./data/embeddings/)                                     │
 │                                                                              │
-│                    Total: ~81,600 embedded chunks                            │
+│                    Multiple source-specific embedded collections             │
 └──────────────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -51,6 +48,11 @@ GTN_SOURCE_DIRECTORY=/path/to/training-material/topics
 
 # Storage
 CHROMA_DIRECTORY=./data/embeddings
+
+# Optional: IWC workflow summary generation
+CHAT_API_KEY=your-chat-api-key
+CHAT_BASE_URL=https://api.openai.com/v1
+CHAT_MODEL=gpt-4o-mini
 ```
 
 2. **LM Studio** running with embedding model (recommended):
@@ -73,16 +75,17 @@ make discourse-all   # Discourse forum posts
 make gtn            # GTN tutorials
 make faq            # Galaxy FAQs
 make iwc            # IWC workflows
+make iwc-summaries  # IWC workflow summaries
 make tools          # Galaxy tool help text
 
-# Run all pipelines
+# Run update pipelines and write the manifest
 make update-all
 
 # Check status
 make status
 ```
 
-## The Four Pipelines
+## The Six Pipelines
 
 ### 1. Discourse Pipeline
 
@@ -261,7 +264,93 @@ Document(
 )
 ```
 
-### 5. Galaxy Tools Pipeline
+### 5. IWC Workflow Summaries Pipeline
+
+**Purpose**: Builds structured summaries for IWC workflows using LLM and embeds the summary text for workflow-level retrieval.
+
+**Source**: https://iwc.galaxyproject.org/workflow_manifest.json
+
+**Output**:
+- JSON summary records: `data/iwc_workflow_summaries.json`
+- Collection: `iwc_workflows_gist`
+
+**Features**:
+- Adds a structured summary section before README and annotation content
+- Captures workflow purpose, scientific domain, main analysis task, ordered steps, tools, and discovered input/output datatypes
+- Uses an OpenAI-compatible chat endpoint when `CHAT_API_KEY` is configured
+- Falls back to deterministic local summaries when chat credentials are unavailable or summary generation fails
+- Stores the structured JSON summary in document metadata as `workflow_summary`
+
+**Usage**:
+
+Make sure you have set the following parameters in the `.env` file
+
+CHAT_API_KEY=local-model
+CHAT_BASE_URL=http://127.0.0.1:1234/v1
+CHAT_MODEL=gpt-oss-120b
+
+The API_KEY and BASE_URL should be OpenAI API compatible.
+
+Then run:
+
+```bash
+# Run IWC workflow summaries pipeline
+make iwc-summaries
+
+# With test query
+uv run python -m pipelines.iwc_gist --test-query "Which workflows process paired-end RNA-seq data?"
+
+# Force rebuild
+uv run python -m pipelines.iwc_gist --force-rebuild
+
+# Skip structured summary generation and embed raw workflow metadata only
+uv run python -m pipelines.iwc_gist --no-summarize-workflows
+
+# Write summaries to a custom file
+uv run python -m pipelines.iwc_gist --summaries-file data/custom_iwc_summaries.json
+```
+
+**Summary Model Configuration**:
+```bash
+CHAT_API_KEY=your-chat-api-key
+CHAT_BASE_URL=https://api.openai.com/v1
+CHAT_MODEL=gpt-4o-mini
+```
+
+These values can also be supplied with `--summary-api-key`, `--summary-base-url`, and `--summary-model`.
+
+**Summary Record Format**:
+```python
+{
+    "workflow_id": "workflow-id",
+    "name": "Workflow Name",
+    "source": "iwc://path/to/workflow#workflow-id",
+    "source_file": "workflow/path",
+    "url": "https://iwc.galaxyproject.org/workflow/workflow-id",
+    "topic": "single-cell",
+    "tags": ["RNA-seq"],
+    "status": "summarised",
+    "summary": {
+        "workflow_name": "Workflow Name",
+        "workflow_purpose": "Purpose inferred from workflow context",
+        "scientific_domain": "single-cell",
+        "main_analysis_task": "Main analysis task",
+        "ordered_steps": [
+            {
+                "step_id": "1",
+                "tool_name": "FastQC",
+                "step_purpose": "Quality control",
+                "input_datatypes": ["fastq"],
+                "output_datatypes": ["html", "txt"]
+            }
+        ],
+        "summary": {}
+    },
+    "text_summary": "Workflow summary name: ..."
+}
+```
+
+### 6. Galaxy Tools Pipeline
 
 **Purpose**: Fetches Galaxy tool metadata and embeds each tool wrapper's help text.
 
@@ -364,7 +453,10 @@ chatgxy-materials/
 │       ├── chroma.sqlite3         # Chroma vector DB
 │       ├── .discourse_tracking.json
 │       ├── .gtn_tracking.json
-│       └── .faq_tracking.json
+│       ├── .faq_tracking.json
+│       ├── .iwc_workflows_tracking.json
+│       ├── .iwc_workflows_gist_tracking.json
+│       └── .galaxy_tools_tracking.json
 ```
 
 ## Incremental Updates
@@ -406,7 +498,9 @@ uv run python -m pipelines.discourse --force-rebuild
 | GTN | 168 | 9,295 | ~2 min | ~200 MB |
 | FAQ | 25 | 62 | <1 min | ~10 MB |
 | IWC | 105 | 772 | ~15 sec | ~20 MB |
-| **Total** | **6,284** | **81,645** | **~70 min** | **~2.2 GB** |
+| IWC summaries | IWC workflow count | varies by workflow summaries | depends on chat model latency | varies |
+| Galaxy tools | UseGalaxy tool count | one or more chunks per tool | depends on API latency | varies |
+| **Total** | **Varies by enabled pipelines** | **Varies by source snapshots** | **Depends on APIs and embedding backend** | **Varies** |
 
 ### Optimization Tips
 
@@ -448,12 +542,33 @@ faq = Chroma(
     embedding_function=embeddings
 )
 
+iwc = Chroma(
+    persist_directory="./data/embeddings",
+    collection_name="iwc_workflows",
+    embedding_function=embeddings
+)
+
+iwc_summaries = Chroma(
+    persist_directory="./data/embeddings",
+    collection_name="iwc_workflows_gist",
+    embedding_function=embeddings
+)
+
+tools = Chroma(
+    persist_directory="./data/embeddings",
+    collection_name="galaxy_tools",
+    embedding_function=embeddings
+)
+
 # Query all sources
 def search_all(query: str, k: int = 5):
     results = {
         'discourse': discourse.similarity_search(query, k=k),
         'gtn': gtn.similarity_search(query, k=k),
-        'faq': faq.similarity_search(query, k=k)
+        'faq': faq.similarity_search(query, k=k),
+        'iwc': iwc.similarity_search(query, k=k),
+        'iwc_summaries': iwc_summaries.similarity_search(query, k=k),
+        'tools': tools.similarity_search(query, k=k),
     }
     return results
 
@@ -471,9 +586,11 @@ Separate collections enable flexible retrieval:
 
 1. **Search only curated content** (tutorials + FAQs)
 2. **Search only community Q&A** (discourse)
-3. **Search all with different weights** (prioritize FAQs, then tutorials)
-4. **Show sources separately** in results
-5. **Filter by metadata** (tags, dates, reply counts, etc.)
+3. **Search workflow summaries** for workflow purpose, step order, tools, and datatypes
+4. **Search tool help text** when the user asks how a Galaxy tool works
+5. **Search all with different weights** (prioritize FAQs, then tutorials)
+6. **Show sources separately** in results
+7. **Filter by metadata** (tags, dates, reply counts, workflow topics, tool sections, etc.)
 
 **Example RAG prompt**:
 ```
@@ -485,6 +602,12 @@ Official Tutorials:
 
 Community Discussions:
 {discourse_results}
+
+Workflow Summaries:
+{iwc_summary_results}
+
+Tool Help:
+{tool_results}
 
 User question: {query}
 ```
@@ -504,12 +627,20 @@ chatgxy-materials/
 │   ├── database.py              # SQLite database layer
 │   ├── discourse.py             # Discourse forum pipeline
 │   ├── gtn.py                   # GTN tutorial pipeline
-│   └── faq.py                   # FAQ pipeline
+│   ├── faq.py                   # FAQ pipeline
+│   ├── iwc.py                   # IWC workflow documentation pipeline
+│   ├── iwc_gist.py              # IWC workflow summaries pipeline
+│   └── tools.py                 # Galaxy tool help-text pipeline
 │
 ├── scripts/
-│   └── migrate_to_sqlite.py     # Migration utilities
+│   ├── migrate_to_sqlite.py     # Migration utilities
+│   └── write_manifest.py        # Embedding snapshot manifest writer
 │
 └── data/                        # Generated data (not in repo)
+    ├── iwc_workflow_summaries.json
+    ├── tools_only.json
+    ├── tools_metadata.tsv
+    ├── tools_helptext.tsv
     ├── discourse/
     │   ├── discourse.db          # SQLite database
     │   └── .cache/               # API response cache
@@ -518,7 +649,10 @@ chatgxy-materials/
         ├── chroma.sqlite3        # Chroma vector database
         ├── .discourse_tracking.json
         ├── .gtn_tracking.json
-        └── .faq_tracking.json
+        ├── .faq_tracking.json
+        ├── .iwc_workflows_tracking.json
+        ├── .iwc_workflows_gist_tracking.json
+        └── .galaxy_tools_tracking.json
 ```
 
 ## Makefile Commands
@@ -539,8 +673,16 @@ make gtn                  # Run GTN pipeline
 # FAQ Pipeline
 make faq                  # Run FAQ pipeline
 
-# All Pipelines
-make update-all           # Run all three pipelines
+# IWC Pipelines
+make iwc                  # Run IWC workflow documentation pipeline
+make iwc-summaries        # Run IWC workflow summaries pipeline
+
+# Galaxy Tools Pipeline
+make tools                # Run Galaxy tools help-text pipeline
+
+# Aggregate update
+make update-all           # Run Discourse, GTN, FAQ, IWC, IWC summaries, and write manifest
+make manifest             # Write embedding snapshot manifest
 
 # Utilities
 make status               # Show database stats
@@ -567,6 +709,15 @@ GTN_SOURCE_DIRECTORY=/path/to/training-material/topics
 
 # Storage
 CHROMA_DIRECTORY=./data/embeddings
+```
+
+### Optional
+
+```bash
+# IWC workflow summary generation
+CHAT_API_KEY=your-chat-api-key
+CHAT_BASE_URL=https://api.openai.com/v1
+CHAT_MODEL=gpt-4o-mini
 ```
 
 ### Embedding Models
@@ -635,6 +786,9 @@ sqlite3 data/discourse/discourse.db "SELECT COUNT(*) FROM topics"
 uv run python -m pipelines.discourse --test-query "your question"
 uv run python -m pipelines.gtn --test-query "your question"
 uv run python -m pipelines.faq --test-query "your question"
+uv run python -m pipelines.iwc --test-query "your question"
+uv run python -m pipelines.iwc_gist --test-query "your question"
+uv run python -m pipelines.tools --test-query "your question"
 ```
 
 **View Chroma collections**:
@@ -652,6 +806,9 @@ for coll in collections:
 cat data/embeddings/.discourse_tracking.json | jq '.documents | length'
 cat data/embeddings/.gtn_tracking.json | jq '.documents | length'
 cat data/embeddings/.faq_tracking.json | jq '.documents | length'
+cat data/embeddings/.iwc_workflows_tracking.json | jq '.documents | length'
+cat data/embeddings/.iwc_workflows_gist_tracking.json | jq '.documents | length'
+cat data/embeddings/.galaxy_tools_tracking.json | jq '.documents | length'
 ```
 
 ## Maintenance
@@ -665,9 +822,13 @@ make convert    # Convert new topics
 make embed      # Embed changes
 make gtn        # Update GTN tutorials
 make faq        # Update FAQs
+make iwc             # Update IWC workflow documentation
+make iwc-summaries   # Update IWC workflow summaries
+make tools           # Update Galaxy tool help text
+make manifest        # Refresh embedding manifest
 ```
 
-**Or run all at once**:
+**Or run the standard update set at once**:
 ```bash
 make update-all
 ```
@@ -679,6 +840,9 @@ To catch edits and ensure data quality:
 uv run python -m pipelines.discourse --force-rebuild
 uv run python -m pipelines.gtn --force-rebuild
 uv run python -m pipelines.faq --force-rebuild
+uv run python -m pipelines.iwc --force-rebuild
+uv run python -m pipelines.iwc_gist --force-rebuild
+uv run python -m pipelines.tools --force-rebuild
 ```
 
 ### Scheduling with Cron
@@ -691,6 +855,9 @@ uv run python -m pipelines.faq --force-rebuild
 0 2 * * * cd /path/to/chatgxy-materials && make discourse-all
 0 3 * * * cd /path/to/chatgxy-materials && make gtn
 0 3 * * * cd /path/to/chatgxy-materials && make faq
+0 4 * * * cd /path/to/chatgxy-materials && make iwc
+0 4 * * * cd /path/to/chatgxy-materials && make iwc-summaries
+0 5 * * * cd /path/to/chatgxy-materials && make tools
 ```
 
 ### Monitoring
