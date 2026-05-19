@@ -12,13 +12,13 @@ The system consists of six independent pipelines that populate separate Chroma v
 ├──────────────────────────────────────────────────────────────────────────────┤
 │                                                                              │
 │ DISCOURSE    GTN       FAQ       IWC       IWC SUMMARIES       TOOLS         │
-│ ┌────────┐ ┌──────┐ ┌──────┐ ┌────────┐ ┌───────────────┐ ┌──────────────┐  │
-│ │ forum  │ │tutor │ │ FAQs │ │workflow│ │ workflow step │ │ Galaxy tool  │  │
-│ │ posts  │ │ials  │ │      │ │ docs   │ │ summaries     │ │ help text    │  │
-│ └────────┘ └──────┘ └──────┘ └────────┘ └───────────────┘ └──────────────┘  │
+│ ┌────────┐ ┌──────┐ ┌──────┐ ┌────────┐ ┌───────────────┐ ┌──────────────┐   │
+│ │ forum  │ │tutor │ │ FAQs │ │workflow│ │ workflow step │ │ Galaxy tool  │   │
+│ │ posts  │ │ials  │ │      │ │ docs   │ │ summaries     │ │ help text    │   │
+│ └────────┘ └──────┘ └──────┘ └────────┘ └───────────────┘ └──────────────┘   │
 │     ↓         ↓        ↓        ↓              ↓                  ↓          │
-│ discourse_  gtn_   galaxy_  iwc_workflows  iwc_workflows_   galaxy_tools    │
-│ posts       tutorials faqs                 gist                             │
+│ discourse_  gtn_   galaxy_  iwc_workflows  iwc_workflows_   galaxy_tools     │
+│ posts       tutorials faqs                 gist                              │
 │                                                                              │
 │                       CHROMA VECTOR STORE                                    │
 │                     (./data/embeddings/)                                     │
@@ -266,7 +266,7 @@ Document(
 
 ### 5. IWC Workflow Summaries Pipeline
 
-**Purpose**: Builds structured summaries for IWC workflows and embeds the summary text for workflow-level and step-level retrieval.
+**Purpose**: Builds structured summaries for IWC workflows using LLM and embeds the summary text for workflow-level retrieval.
 
 **Source**: https://iwc.galaxyproject.org/workflow_manifest.json
 
