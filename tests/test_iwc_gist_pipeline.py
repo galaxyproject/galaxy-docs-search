@@ -14,6 +14,9 @@ from pathlib import Path
 
 from langchain_core.documents import Document
 
+import pipelines.iwc_gist as iwc_gist
+from pipelines.iwc_gist import IWCPipeline
+
 ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
@@ -37,9 +40,6 @@ class DummyEmbeddingPipeline:
 common_stub = types.ModuleType("pipelines.common")
 common_stub.EmbeddingPipeline = DummyEmbeddingPipeline
 sys.modules.setdefault("pipelines.common", common_stub)
-
-import pipelines.iwc_gist as iwc_gist
-from pipelines.iwc_gist import IWCPipeline
 
 
 def make_pipeline(monkeypatch, tmp_path, **kwargs) -> IWCPipeline:

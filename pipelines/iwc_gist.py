@@ -686,7 +686,7 @@ def main():
         summaries_file=args.summaries_file,
     )
 
-    vectorstore = pipeline.run(
+    pipeline.run(
         force_rebuild=args.force_rebuild, test_query=args.test_query
     )
 
