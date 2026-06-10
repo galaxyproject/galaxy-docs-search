@@ -923,6 +923,16 @@ pytest tests/test_db_integration.py
 pytest -v tests/
 ```
 
+### Exporting vector database
+
+- Package database
+
+`tar -czf chroma_db.tar.gz data/embedding/`
+
+- Unpack
+
+`tar -xzf chroma_db.tar.gz -C <destination folder>`
+
 ### Adding a New Pipeline
 
 1. Create new file: `pipelines/your_pipeline.py`
