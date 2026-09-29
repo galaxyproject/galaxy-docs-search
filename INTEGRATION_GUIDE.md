@@ -22,7 +22,7 @@ The current snapshot is embedded with TACC's `E5-Mistral-7B-Instruct` (4096 dime
 There are two consumption paths depending on whether your code can import a Python module in the same process as the Chroma store:
 
 - **Python, same process** (e.g. ChatGXY running inside a Galaxy server): import `retrieval.GalaxyDocsRetriever` directly. No network hop, no MCP plumbing.
-- **Anything else** (TypeScript agents, separate services, anything that talks MCP): run `galaxy-docs-mcp` and call the `search_galaxy_docs` tool. See [MCP server](#mcp-server-galaxy-docs-mcp) below.
+- **Anything else** (TypeScript agents, separate services, anything that talks MCP): run `galaxy-docs-mcp` and call the `search_galaxy_docs` tool, or use its plain HTTP API. See [MCP server](#mcp-server-galaxy-docs-mcp) and [Hosted service](#hosted-service-http-json-api) below.
 
 ### Python in-process: `retrieval.GalaxyDocsRetriever`
 
@@ -66,6 +66,31 @@ Env vars (in addition to the embedder ones above):
 - `GALAXY_DOCS_EMBEDDINGS_DIR` -- path to the Chroma persist dir (default `./data/embeddings`)
 - `GALAXY_DOCS_TRANSPORT` -- `stdio` | `streamable-http` | `sse` (default `stdio`)
 - `GALAXY_DOCS_HOST` / `GALAXY_DOCS_PORT` -- only used for HTTP transports
+- `GALAXY_DOCS_API_KEYS` -- comma-separated bearer tokens; when set, everything except `/healthz` (including `/mcp`) requires `Authorization: Bearer <key>`
+
+`tools` is also a valid `collection`, for snapshots built with the tools pipeline. Asking for a collection the snapshot doesn't hold is an error rather than an empty result.
+
+### Hosted service: HTTP JSON API
+
+On an HTTP transport the same process also serves plain JSON routes, for consumers that don't speak MCP (ChatGXY inside Galaxy, scripts). Callers send plain text and get documents back; the embedding model stays on the server.
+
+```bash
+curl localhost:8765/v1/collections
+# {"index_version": "2026-05-09T02:10:13Z", "model": "E5-Mistral-7B-Instruct",
+#  "collections": [{"key": "faqs", "title": ..., "description": ..., "chunks": 59, "documents": 25}, ...]}
+
+curl -X POST localhost:8765/v1/search -H 'content-type: application/json' \
+  -d '{"query": "trim adapters from paired-end reads", "collections": ["tutorials", "faqs"], "k": 3}'
+# {"index_version": "...", "hits": [{"text", "score", "collection", "source_url", "metadata"}, ...]}
+```
+
+- `collections` defaults to everything in the snapshot; `k` is per collection, 1-20 (default 5); `query` is capped at 2000 characters.
+- `index_version` is the snapshot's `built_at`, so consumers can tell when the index changed.
+- `source_url` is always a public URL or `null`. GTN/FAQ chunks built from a local checkout are mapped onto training.galaxyproject.org.
+- Query text is never logged. Rate limiting belongs in the reverse proxy in front of it.
+- `GET /healthz` is always open.
+
+Container: `docker build -t galaxy-docs-search .`, then run it with the snapshot mounted at `/data/embeddings` and the `EMBEDDINGS_*` env vars set; it listens on 8000.
 
 ### Raw langchain (advanced)
 
