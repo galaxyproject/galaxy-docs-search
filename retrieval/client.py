@@ -15,10 +15,14 @@ from langchain_community.vectorstores import Chroma
 from langchain_openai import OpenAIEmbeddings
 
 from retrieval import manifest as manifest_mod
-from retrieval.collections import COLLECTIONS, CollectionInfo, CollectionKey
+from retrieval.collections import (
+    COLLECTIONS,
+    CollectionInfo,
+    CollectionKey,
+    available_collections,
+)
 
 logger = logging.getLogger(__name__)
-
 
 @dataclass
 class Hit:
@@ -77,12 +81,12 @@ class GalaxyDocsRetriever:
         if not self.api_key:
             raise ValueError("embeddings_api_key not set (pass it or set EMBEDDINGS_API_KEY)")
 
+        self.manifest = manifest_mod.load(self.embeddings_dir)
         if validate_manifest:
-            manifest_mod.validate(
-                manifest_mod.load(self.embeddings_dir),
-                self.model,
-                strict=strict_manifest,
-            )
+            manifest_mod.validate(self.manifest, self.model, strict=strict_manifest)
+        self.collections = available_collections(
+            self.manifest.collections if self.manifest else None
+        )
 
         self.embeddings = OpenAIEmbeddings(
             model=self.model,
@@ -124,8 +128,8 @@ class GalaxyDocsRetriever:
         ]
 
     def search_all(self, query: str, per_collection_k: int = 3) -> list[Hit]:
-        """Top-k from each collection, flattened. No cross-collection reranking."""
+        """Top-k from each collection in the snapshot, flattened. No cross-collection reranking."""
         hits: list[Hit] = []
-        for key in COLLECTIONS:
-            hits.extend(self.search(query, key, k=per_collection_k))
+        for info in self.collections:
+            hits.extend(self.search(query, info.key, k=per_collection_k))
         return hits

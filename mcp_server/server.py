@@ -24,7 +24,7 @@ logger = logging.getLogger(__name__)
 
 DEFAULT_EMBEDDINGS_DIR = Path("./data/embeddings")
 
-CollectionArg = Literal["faqs", "tutorials", "discourse", "workflows", "all"]
+CollectionArg = Literal["faqs", "tutorials", "discourse", "workflows", "tools", "all"]
 
 
 def _build_tool_description() -> str:
@@ -43,7 +43,7 @@ def _build_tool_description() -> str:
         lines.append(f"- `{info.key}`: {info.description}")
     lines.extend(
         [
-            "- `all`: Search all four collections; returns top-k from each, "
+            "- `all`: Search every collection in this snapshot; returns top-k from each, "
             "flattened into one list (each Hit carries its `collection` field). "
             "No cross-collection reranking -- raw scores aren't comparable across "
             "corpora, and the caller can filter.",
@@ -95,6 +95,8 @@ def build_server(
         r = _get_retriever()
         if collection == "all":
             hits = r.search_all(query, per_collection_k=k)
+        elif collection not in {c.key for c in r.collections}:
+            raise ValueError(f"Collection {collection!r} isn't in this snapshot.")
         else:
             hits = r.search(query, collection, k=k)
         return [h.to_dict() for h in hits]
