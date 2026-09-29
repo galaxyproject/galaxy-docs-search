@@ -24,6 +24,25 @@ from retrieval.collections import (
 
 logger = logging.getLogger(__name__)
 
+GTN_BASE_URL = "https://training.galaxyproject.org/training-material/"
+GTN_CHECKOUT_MARKER = "training-material/"
+
+
+def public_url(value: str) -> str | None:
+    """Turn a pipeline's `source` into something a consumer can cite.
+
+    GTN and FAQ chunks record the local checkout path they were built from;
+    map those onto the published site and drop any other filesystem path
+    rather than leak the build machine's layout.
+    """
+    if value.startswith(("http://", "https://")):
+        return value
+    _, marker, rel = value.rpartition(GTN_CHECKOUT_MARKER)
+    if marker and rel.endswith(".md"):
+        return GTN_BASE_URL + rel[: -len(".md")] + ".html"
+    return None
+
+
 @dataclass
 class Hit:
     text: str
@@ -33,11 +52,11 @@ class Hit:
 
     @property
     def source_url(self) -> str | None:
-        """Best-guess URL/path for the source document."""
+        """Public URL for the source document, if one can be worked out."""
         for key in ("url", "source_url", "source", "path"):
             value = self.metadata.get(key)
             if value:
-                return str(value)
+                return public_url(str(value))
         return None
 
     def to_dict(self) -> dict[str, Any]:
