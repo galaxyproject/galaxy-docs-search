@@ -16,9 +16,12 @@ from typing import Any, Literal
 
 from dotenv import load_dotenv
 from fastmcp import FastMCP
+from starlette.middleware import Middleware
 
 from retrieval import GalaxyDocsRetriever
 from retrieval.collections import COLLECTIONS
+
+from mcp_server.http_api import ApiKeyMiddleware, register_http_routes
 
 logger = logging.getLogger(__name__)
 
@@ -101,12 +104,19 @@ def build_server(
             hits = r.search(query, collection, k=k)
         return [h.to_dict() for h in hits]
 
+    register_http_routes(mcp, _get_retriever)
+
     return mcp
 
 
+def http_middleware() -> list[Middleware]:
+    keys = [k.strip() for k in os.getenv("GALAXY_DOCS_API_KEYS", "").split(",") if k.strip()]
+    return [Middleware(ApiKeyMiddleware, api_keys=keys)] if keys else []
+
+
 def run_http(mcp: FastMCP, transport: str, host: str | None, port: int | None) -> None:
-    """Run the server on streamable-http or sse."""
-    kwargs: dict[str, Any] = {"transport": transport}
+    """Run the server on streamable-http or sse, alongside the /v1 JSON routes."""
+    kwargs: dict[str, Any] = {"transport": transport, "middleware": http_middleware()}
     if host:
         kwargs["host"] = host
     if port:
