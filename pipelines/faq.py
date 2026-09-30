@@ -225,7 +225,8 @@ def _default_source_dir() -> str:
     """Resolve the FAQ source directory.
 
     Priority: FAQ_SOURCE_DIRECTORY -> parent of GTN_SOURCE_DIRECTORY (which
-    points at `.../training-material/topics`) -> a sensible fallback path.
+    points at `.../training-material/topics`) -> a placeholder that fails the
+    existence check below with a hint about which env var to set.
     """
     explicit = os.getenv("FAQ_SOURCE_DIRECTORY")
     if explicit:
@@ -235,7 +236,7 @@ def _default_source_dir() -> str:
         # GTN_SOURCE_DIRECTORY points at `.../training-material/topics`; we
         # want the repo root one level up.
         return str(Path(gtn.rstrip("/")).parent)
-    return "/Users/dannon/work/training-material"
+    return "/path/to/training-material"
 
 
 def main():

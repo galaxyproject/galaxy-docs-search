@@ -203,7 +203,7 @@ def fetch_all_help_texts(
 ) -> None:
     """Mutate each tool with its cleaned help text."""
     with requests.Session() as session:
-        session.headers.update({"User-Agent": "chatgxy-tool-help-scraper/1.0"})
+        session.headers.update({"User-Agent": "galaxy-docs-search-tool-help-scraper/1.0"})
         for tool in tqdm(tools, desc="Galaxy tool help"):
             try:
                 tool.help_text = fetch_tool_help_text(session, base_url, tool.tool_id, timeout)

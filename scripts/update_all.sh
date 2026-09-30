@@ -10,7 +10,7 @@
 #   ./scripts/update_all.sh --force-rebuild  # Full rebuild
 #
 # Cron example (daily at 2am):
-#   0 2 * * * cd /path/to/chatgxy-materials && ./scripts/update_all.sh
+#   0 2 * * * cd /path/to/galaxy-docs-search && ./scripts/update_all.sh
 
 set -euo pipefail
 

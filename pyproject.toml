@@ -1,5 +1,5 @@
 [project]
-name = "chatgxy-materials"
+name = "galaxy-docs-search"
 version = "0.1.0"
 description = "RAG-ready embedding pipelines for Galaxy project documentation"
 authors = [

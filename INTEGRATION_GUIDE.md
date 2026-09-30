@@ -1,10 +1,10 @@
-# ChatGXY Integration Guide
+# Galaxy Docs Search Integration Guide
 
-Complete guide for integrating the ChatGXY Materials Pipeline into your RAG system.
+Complete guide for integrating the Galaxy Docs Search collections into your RAG system.
 
 ## System Overview
 
-The ChatGXY Materials Pipeline provides four separate vector store collections containing Galaxy Project documentation:
+The Galaxy Docs Search pipelines provide four separate vector store collections containing Galaxy Project documentation:
 
 | Collection | Content | Documents | Chunks | Use Case |
 |------------|---------|-----------|--------|----------|
@@ -21,7 +21,7 @@ The current snapshot is embedded with TACC's `E5-Mistral-7B-Instruct` (4096 dime
 
 There are two consumption paths depending on whether your code can import a Python module in the same process as the Chroma store:
 
-- **Python, same process** (e.g. ChatGXY running inside a Galaxy server): import `retrieval.GalaxyDocsRetriever` directly. No network hop, no MCP plumbing.
+- **Python, same process** (e.g. GalaxyAI running inside a Galaxy server): import `retrieval.GalaxyDocsRetriever` directly. No network hop, no MCP plumbing.
 - **Anything else** (TypeScript agents, separate services, anything that talks MCP): run `galaxy-docs-mcp` and call the `search_galaxy_docs` tool, or use its plain HTTP API. See [MCP server](#mcp-server-galaxy-docs-mcp) and [Hosted service](#hosted-service-http-json-api) below.
 
 ### Python in-process: `retrieval.GalaxyDocsRetriever`
@@ -52,7 +52,7 @@ For non-Python consumers (Loom, other agents) the same retriever is exposed as a
 Install the optional extra and run it:
 
 ```bash
-pip install 'chatgxy-materials[mcp]'
+pip install 'galaxy-docs-search[mcp]'
 
 # stdio (default) -- subprocess-style consumers
 galaxy-docs-mcp
@@ -72,7 +72,7 @@ Env vars (in addition to the embedder ones above):
 
 ### Hosted service: HTTP JSON API
 
-On an HTTP transport the same process also serves plain JSON routes, for consumers that don't speak MCP (ChatGXY inside Galaxy, scripts). Callers send plain text and get documents back; the embedding model stays on the server.
+On an HTTP transport the same process also serves plain JSON routes, for consumers that don't speak MCP (GalaxyAI inside Galaxy, scripts). Callers send plain text and get documents back; the embedding model stays on the server.
 
 ```bash
 curl localhost:8765/v1/collections

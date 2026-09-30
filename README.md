@@ -1,6 +1,6 @@
-# ChatGXY Materials Pipeline
+# Galaxy Docs Search
 
-A complete RAG (Retrieval-Augmented Generation) system for the Galaxy Project that fetches, processes, and embeds documentation from multiple sources. This enables semantic search and question-answering capabilities for the ChatGXY chatbot.
+A complete RAG (Retrieval-Augmented Generation) system for the Galaxy Project that fetches, processes, and embeds documentation from multiple sources. This enables semantic search and question-answering for GalaxyAI and other Galaxy agents, either in-process or through the hosted search service (MCP + JSON API, see `INTEGRATION_GUIDE.md`).
 
 ## Overview
 
@@ -8,7 +8,7 @@ The system consists of six independent pipelines that populate separate Chroma v
 
 ```
 ┌──────────────────────────────────────────────────────────────────────────────┐
-│                        CHATGXY MATERIALS PIPELINE                            │
+│                         GALAXY DOCS SEARCH PIPELINE                          │
 ├──────────────────────────────────────────────────────────────────────────────┤
 │                                                                              │
 │ DISCOURSE    GTN       FAQ       IWC       IWC SUMMARIES       TOOLS         │
@@ -443,7 +443,7 @@ results = vectorstore.similarity_search("your query", k=5)
 ### Storage Structure
 
 ```
-chatgxy-materials/
+galaxy-docs-search/
 ├── data/
 │   ├── discourse/
 │   │   ├── discourse.db          # SQLite database
@@ -509,9 +509,9 @@ uv run python -m pipelines.discourse --force-rebuild
 3. **Batch Size**: Adjust in `common.py` if memory constrained
 4. **Caching**: API responses cached to avoid re-fetching
 
-## Integration with ChatGXY
+## Integration with GalaxyAI
 
-The pipelines produce Chroma vector stores that can be queried by the ChatGXY chatbot:
+The pipelines produce Chroma vector stores that can be queried by GalaxyAI:
 
 ```python
 from langchain_community.vectorstores import Chroma
@@ -615,7 +615,7 @@ User question: {query}
 ## File Structure
 
 ```
-chatgxy-materials/
+galaxy-docs-search/
 ├── README.md                    # Main documentation
 ├── INTEGRATION_GUIDE.md         # RAG integration guide
 ├── Makefile                     # Pipeline commands
@@ -849,15 +849,15 @@ uv run python -m pipelines.tools --force-rebuild
 
 ```bash
 # Daily at 2am
-0 2 * * * cd /path/to/chatgxy-materials && make update-all
+0 2 * * * cd /path/to/galaxy-docs-search && make update-all
 
 # Or individually
-0 2 * * * cd /path/to/chatgxy-materials && make discourse-all
-0 3 * * * cd /path/to/chatgxy-materials && make gtn
-0 3 * * * cd /path/to/chatgxy-materials && make faq
-0 4 * * * cd /path/to/chatgxy-materials && make iwc
-0 4 * * * cd /path/to/chatgxy-materials && make iwc-summaries
-0 5 * * * cd /path/to/chatgxy-materials && make tools
+0 2 * * * cd /path/to/galaxy-docs-search && make discourse-all
+0 3 * * * cd /path/to/galaxy-docs-search && make gtn
+0 3 * * * cd /path/to/galaxy-docs-search && make faq
+0 4 * * * cd /path/to/galaxy-docs-search && make iwc
+0 4 * * * cd /path/to/galaxy-docs-search && make iwc-summaries
+0 5 * * * cd /path/to/galaxy-docs-search && make tools
 ```
 
 ### Monitoring
