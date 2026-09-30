@@ -9,7 +9,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Literal
 
-CollectionKey = Literal["faqs", "tutorials", "discourse", "workflows"]
+CollectionKey = Literal["faqs", "tutorials", "discourse", "workflows", "tools"]
 
 
 @dataclass(frozen=True)
@@ -62,7 +62,29 @@ COLLECTIONS: dict[CollectionKey, CollectionInfo] = {
             "recommending a published analysis pipeline."
         ),
     ),
+    "tools": CollectionInfo(
+        key="tools",
+        chroma_name="galaxy_tools",
+        title="Galaxy Tools",
+        description=(
+            "Galaxy tool wrappers' help text, with tool ids and panel sections. "
+            "Best for 'which tool does X' or 'what does this tool's parameter "
+            "mean' questions."
+        ),
+    ),
 }
+
+
+def available_collections(manifest_collections: dict[str, object] | None) -> list[CollectionInfo]:
+    """Collections actually present in a snapshot.
+
+    Not every build runs every pipeline, and querying a missing Chroma
+    collection silently creates an empty one, so consumers should only be
+    offered what the manifest lists. With no manifest, assume everything.
+    """
+    if manifest_collections is None:
+        return list(COLLECTIONS.values())
+    return [info for info in COLLECTIONS.values() if info.chroma_name in manifest_collections]
 
 
 def collection_by_chroma_name(name: str) -> CollectionInfo | None:
