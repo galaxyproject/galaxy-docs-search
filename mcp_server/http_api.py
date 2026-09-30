@@ -1,7 +1,7 @@
 """
 Plain HTTP search API, served from the same process as the MCP endpoint.
 
-Consumers that don't speak MCP (ChatGXY inside Galaxy, scripts, the help-forum
+Consumers that don't speak MCP (GalaxyAI inside Galaxy, scripts, the help-forum
 agent) get the same retrieval over two JSON routes:
 
     GET  /v1/collections  -- what this snapshot holds, and which model built it

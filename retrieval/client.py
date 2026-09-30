@@ -1,5 +1,5 @@
 """
-GalaxyDocsRetriever -- semantic search over the four chatgxy-materials
+GalaxyDocsRetriever -- semantic search over the galaxy-docs-search
 Chroma collections. Lazy-loads each collection on first use.
 """
 
@@ -71,7 +71,7 @@ class Hit:
 
 class GalaxyDocsRetriever:
     """
-    Semantic retriever over the four chatgxy-materials collections.
+    Semantic retriever over the galaxy-docs-search collections.
 
     Construct once per process, call .search(query, collection) or
     .search_all(query) for each query. Each Chroma collection is loaded on
